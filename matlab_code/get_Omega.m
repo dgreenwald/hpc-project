@@ -8,11 +8,7 @@
 
 % gamma: the risk aversion parameter
 
-% R: the gross interest rate
-
-% x_grid: a vector of values for total cash on hand on which we have defined our functions
-
-% q_grid: a vector of value for bond prices (inverse of the interest rate) on which we have defined our functions
+% x_grid, q_grid: vectors of values for x and q on which we define our functions
 
 % s_grid: a vector of savings choices that we want to consider
 
@@ -20,9 +16,11 @@
 
 % y_bar: value of income conditional on next period's state
 
-% [x_mat, q_mat]: the output of meshgrid(a_grid, q_grid) used for interpolation
+% [x_mat, q_mat]: the output of meshgrid(x_grid, q_grid) used for interpolation
 
-function Omega = get_Omega(c_next, gamma, R, a_grid, q_grid, s_grid, q_bar, y_bar, a_mat, q_mat, P)
+% P: the transition probability matrix for the stochastic processes
+
+function Omega = get_Omega(c_next, gamma, x_grid, q_grid, s_grid, q_bar, y_bar, x_mat, q_mat, P)
 
 
 Np = length(P);
@@ -42,7 +40,7 @@ for is = 1:Np
         y_next = y_bar(js);  % Next period's income under this state
         x_next = a_next + y_next;  % Cash on hand = assets plus income
         q_next = q_bar(js)*ones(Ns,1);  % Need to know next period's bond prices -- assume average value
-        dU_next = interp2(a_mat, q_mat, c_next(:,:,js), x_next, q_next, 'linear').^(-gam);  % Interpolate to get E U'
+        dU_next = interp2(x_mat, q_mat, c_next(:,:,js), x_next, q_next, 'linear').^(-gam);  % Interpolate to get E U'
         Omega(:,:,is) = Omega(:,:,is) + P(is,js)*dU_next; % Weight by transition probability and add to running total
     end
 end
