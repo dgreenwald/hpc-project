@@ -3,7 +3,7 @@
 % This program solves for the next iteration of functions (i.e. for the previous period), given a set of solutions,
 % represented by Omega. The solution uses the "endogenous grid method" in which the nonlinear equation is solved by
 
-% 1. Starting with a grid of savings values 
+% 1. Starting with a grid of savings values
 
 % 2. Applying earlier results to get next period's expected marginal utility given savings
 
@@ -24,27 +24,22 @@
 
 % bet, gam: preference paramters (discount factor/impatiance, and risk aversion, respectively).
 
-function c = solve_iter(Omega, x_grid, q_grid, P, bet, gam)
+function [V,c] = solve_iter(EV, EdU, x_grid, q_grid, s_grid, bet, gam, U, x_min, x_max, Nx, Nq, Nw, Ns)
 
-% Get sizes of various grids
-Np = length(P);
-Nx = length(x_grid);
-Nq = length(q_grid);
 
 % Preallocate arrays
-V = zeros(Nx, Nq, Np);
-c = zeros(Nx, Nq, Np);
+c = zeros(Nx, Nq, Nw);
 
 % Stack grids
 s_stack = repmat(s_grid, 1, Nq);    % Stack 1 x Nq columns of s_grid
 q_stack = repmat(q_grid', Ns, 1);   % Stack Ns x 1 rows of q_grid
 
 % Loop through current state
-for is = 1:Np
+for is = 1:Nw
 
     % Calculate expected marginal return on savings.
     % Note, this will only work if Omega is defined on the same grids.
-    euler_rhs = bet*Omega(:,:,is)./q_stack;
+    euler_rhs = bet*EdU(:,:,is)./q_stack;
 
     % Calculate implied current consumption.
     c_endog = euler_rhs.^(-1/gam);
@@ -55,7 +50,34 @@ for is = 1:Np
     % Interpolate to get optimal consumption policy to original grid
     % Note additional points added to bottom of grid for constrained region in which agent consumes all income
     for iq = 1:Nq
-        c(:,iq,is) = interp1([xmin; x_endog], [0; c_endog], x_grid, 'linear');
+        if x_endog(1,iq) > x_min
+            x_i = [x_min; x_endog(:,iq)];
+            c_i = [x_min; c_endog(:,iq)];
+        else
+            x_i = x_endog(:,iq);
+            c_i = c_endog(:,iq);
+        end
+        if x_i(end) < x_max
+            diff = x_max - x_i(end);
+            x_i = [x_i; x_max];
+            c_i = [c_i; c_i(end) + diff];
+        end
+        if any(isinf(x_i)) || any(isinf(c_i))
+            keyboard;
+        end
+        if any(isnan(x_i)) || any(isnan(c_i))
+            keyboard;
+        end
+        c(:,iq,is) = interp1(x_i, c_i, x_grid, 'linear');
+        if any(isnan(c(:,iq,is)))
+            keyboard;
+        end
     end
 
+end
+
+% Apply solution to calculate new value function
+V = U(c) + bet*EV;
+if any(any(any(isnan(V))))
+    keyboard;
 end
