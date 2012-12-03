@@ -3,9 +3,8 @@
 kernel void solve_endog(read_only image3d_t c_next,
                         read_only image3d_t V_next,
                         write_only image3d_t EV_endog,
-                        global float* c_endog,
-                        global float* x_endog,
-                        global float* EV_endog,
+                        global float ***c_endog,
+                        global float ***x_endog,
                         float* s_grid, float* q_grid, float* w_grid,
                         float* a_next, float* qbar,
                         float gam, float bet)
@@ -21,9 +20,9 @@ kernel void solve_endog(read_only image3d_t c_next,
   float x_next, q_next, w_next, euler_rhs, EV_i, EdU_i, c_i, x_i;
   float4 read_coords, y, V_j, dU_j;
 
-  is = get_global_id(0);
+  iw = get_global_id(0);
   iq = get_global_id(1);
-  iw = get_global_id(2);
+  is = get_global_id(2);
 
   vec_ix = Nq*Nw*is + Nw*iq + iw;
 
@@ -48,8 +47,10 @@ kernel void solve_endog(read_only image3d_t c_next,
     }
 
   euler_rhs = bet*EdU_i/q_grid[iq];
-  c_endog[vec_ix] = pow(euler_rhs, -1/gam);
-  x_endog[vec_ix] = c_endog[vec_ix] + s_grid[is];
+  /* c_endog[vec_ix] = pow(euler_rhs, -1/gam); */
+  /* x_endog[vec_ix] = c_endog[vec_ix] + s_grid[is]; */
+  c_endog[iw][iq][is] = pow(euler_rhs, -1/gam);
+  x_endog[iw][iq][is] = c_endog[vec_ix] + s_grid[is];
 
   write_coords = (int4)(is, iq, iw, 0);
   write_imagef(EV, write_coords, EV_i);
