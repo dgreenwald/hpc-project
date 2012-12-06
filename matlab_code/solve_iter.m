@@ -35,11 +35,11 @@ s_stack = repmat(s_grid, 1, Nq);    % Stack 1 x Nq columns of s_grid
 q_stack = repmat(q_grid', Ns, 1);   % Stack Ns x 1 rows of q_grid
 
 % Loop through current state
-for is = 1:Nw
+for iw = 1:Nw
 
     % Calculate expected marginal return on savings.
     % Note, this will only work if Omega is defined on the same grids.
-    euler_rhs = bet*EdU(:,:,is)./q_stack;
+    euler_rhs = bet*EdU(:,:,iw)./q_stack;
 
     % Calculate implied current consumption.
     c_endog = euler_rhs.^(-1/gam);
@@ -68,8 +68,10 @@ for is = 1:Nw
         if any(isnan(x_i)) || any(isnan(c_i))
             keyboard;
         end
-        c(:,iq,is) = interp1(x_i, c_i, x_grid, 'linear');
-        if any(isnan(c(:,iq,is)))
+        c(:,iq,iw) = interp1(x_i, c_i, x_grid, 'linear'); % 1-d interpolation (unknown grid)
+        s = x_grid - c(:,iq,iw);
+        V(:,iq,iw) = c(:,iq,iw) + bet*interp1(s_grid, EV(:,iq,iw), s, 'linear'); % 1-d interpolation (unknown grid)
+        if any(isnan(c(:,iq,iw)))
             keyboard;
         end
     end

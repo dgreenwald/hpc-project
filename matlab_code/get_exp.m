@@ -32,19 +32,19 @@ q_stack = repmat(q_grid', Ns, 1);   % Stack Ns x 1 rows of q_grid
 a_next = s_stack./q_stack;  % Next period's assets (savings divided by current bond price, i.e. savings times current
                             % interest rate).
 
-for is = 1:Nw
-    for js = 1:Nw
-        x_next = a_next + w_grid(js); % Cash on hand = assets plus income
-        q_next = q_bar(js)*ones(Ns, Nq);  % Need to know next period's bond prices -- assume average value
+for iw = 1:Nw
+    for jw = 1:Nw
+        x_next = a_next + w_grid(jw); % Cash on hand = assets plus income
+        q_next = q_bar(jw)*ones(Ns, Nq);  % Need to know next period's bond prices -- assume average value
         
-        V_w = interp2(x_mat, q_mat, V_next(:,:,js)', x_next, q_next, 'linear');  % Interpolate to get V given w'
-        dU_w = interp2(x_mat, q_mat, c_next(:,:,js)', x_next, q_next, 'linear').^(-gam);  % Interpolate to get dU given w'
+        V_w = interp2(x_mat, q_mat, V_next(:,:,jw)', x_next, q_next, 'linear');  % Interpolate to get V given w'
+        dU_w = interp2(x_mat, q_mat, c_next(:,:,jw)', x_next, q_next, 'linear').^(-gam);  % Interpolate to get dU given w'
         
-        if any(any(isnan(V_w))) || any(any(isnan(dU_w)))
+        if any(any(iwnan(V_w))) || any(any(iwnan(dU_w)))
             keyboard;
         end
         
-        EV(:,:,is) = EV(:,:,is) + Pw(is,js)*V_w; % Weight by transition probability and add to total expectation
-        EdU(:,:,is) = EdU(:,:,is) + Pw(is,js)*dU_w; 
+        EV(:,:,iw) = EV(:,:,iw) + Pw(iw,jw)*V_w; % Weight by transition probability and add to total expectation
+        EdU(:,:,iw) = EdU(:,:,iw) + Pw(iw,jw)*dU_w; 
     end
 end

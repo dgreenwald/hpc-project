@@ -37,7 +37,7 @@ kernel void solve_endog(read_only image3d_t c_next,
       w_next = w_grid[jw];
       coords = (float4)(x_next, q_next, w_next, 0.0);
 
-      y = read_imagef(V_next, interp3, coords);
+      y = read_imagef(V_next, interp3, coords); // These coords are incorrect as written
       V_j = y.w; // information in alpha channel
       EV_i += Pt[Nw*iw + jw] * Vw; // Pt is P' (or P stored in row-major form)
 

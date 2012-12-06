@@ -14,10 +14,10 @@ k = 0.4;     % Polynomial grid curvature parameter
 
 %% Preferences
 
-gam = 2;
-bet = 0.95;
+gam = 2; % Risk aversion
+bet = 0.95; % Patience
 
-U = @(c) (c.^(1-gam))/(1-gam);
+U = @(c) (c.^(1-gam))/(1-gam); % Utility function (how much you like consuming today)
 
 %% Wage/Productivity Process
 
