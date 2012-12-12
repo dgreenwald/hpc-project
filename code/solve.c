@@ -3,8 +3,19 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
-#include <gsl/gsl_errno.h>
-#include <gsl/gsl_interp.h>
+/* #include <gsl/gsl_errno.h> */
+/* #include <gsl/gsl_interp.h> */
+
+double* poly_grid(double f_min, double f_max, double k, int N)
+{
+  double *f = malloc(sizeof(double)*N);
+  if (!f) { perror("alloc error in poly_grid"); abort(); }
+
+  for (int ii = 1; ii < N; ++ii)
+    {
+      f[ii] = f_min + (f_max - f_min) * pow(ii/(N-1), 1/k);
+    }
+}
 
 int main(int argc, char **argv)
 {
@@ -23,18 +34,17 @@ int main(int argc, char **argv)
   cl_int status;
 
   char* knl_text;
-  cl_kernel solve_endog_knl;
-  cl_kernel eval_v_knl;
+  cl_kernel solve;
 
-  size_t origin, region, ldim, gdim;
+  size_t ldim, gdim;
 
   create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
 
   // Define parameters
 
-  const cl_float tol, k, gam, bet, q_min, q_max, x_min, x_max, s_min, s_max;
-  const cl_int Nx, Nq, Nz, Ny, Nw, Ns;
-  const cl_float* Pz, Py, Pw, z_grid, y_grid, w_grid, max_vals;
+  const cl_double tol, k, gam, bet, q_min, q_max, x_min, x_max, s_min, s_max;
+  const cl_int Nx, Nq, Nz, Ne, Ns;
+  const cl_double* Pz, Py, Pw, z_grid, y_grid, w_grid, max_vals;
 
   tol = 1e-6;  // Max change in function for termination
   k = 0.4;  // Polynomial grid curvature
@@ -42,9 +52,8 @@ int main(int argc, char **argv)
   Nx = 100;  // No. of points in total wealth grid
   Nq = 100;  // No. of points in bond price grid
   Nz = 2;  // No. of aggregate productivity states
-  Ny = 4;  // No. of idiosyncratic productivity states
-  Nw = Nz*Ny;  // No. of total productivity states
-  Ns = Nx;  // Number of points in savings grid
+  Ne = 2;  // No. of idiosyncratic productivity states
+  Ns = Nz*Ne;  // Number of points in savings grid
 
   gam = 2;
   bet = 0.95;
@@ -59,63 +68,53 @@ int main(int argc, char **argv)
   *****/
 
   // Allocate CPU memory
-  cl_float ***c_endog = malloc(sizeof(cl_float) * Nw * Nq * Ns);
-  if (!c_endog) { perror("alloc c_endog"); abort(); }
+  cl_double *V_all = malloc(sizeof(cl_double) * Nx * Nq * Ns);
+  if (!V_all) { perror("alloc c_endog"); abort(); }
 
-  cl_float ***x_endog = malloc(sizeof(cl_float) * Nw * Nq * Ns);
-  if (!x_endog) { perror("alloc x_endog"); abort(); }
+  cl_double *c_all = malloc(sizeof(cl_double) * Nx * Nq * Ns);
+  if (!c_all) { perror("alloc x_endog"); abort(); }
 
-  cl_float ***c_array = malloc(sizeof(cl_float) * Nw * Nq * Nx);
-  if (!c) { perror("alloc c"); abort(); }
-
-  cl_float ***V_array = malloc(sizeof(cl_float) * Nw * Nq * Nx);
-  if (!x) { perror("alloc x"); abort(); }
-
-  cl_float ***EV_array = malloc(sizeof(cl_float) * Nw * Nq * Ns);
-  if (!x) { perror("alloc x"); abort(); }
-
-  cl_float* x_grid = malloc(sizeof(cl_float) * Nx);
+  cl_double * x_grid = malloc(sizeof(cl_double) * Nx);
   if (!x_grid) { perror("alloc x_grid"); abort(); }
-  cl_float* s_grid = malloc(sizeof(cl_float) * Ns);
+
+  cl_double *s_grid = malloc(sizeof(cl_double) * Ns);
   if (!s_grid) { perror("alloc s_grid"); abort(); }
-  cl_float* q_grid = malloc(sizeof(cl_float) * Nq);
+
+  cl_double *q_grid = malloc(sizeof(cl_double) * Nq);
   if (!q_grid) { perror("alloc q_grid"); abort(); }
-  cl_float* w_grid = malloc(sizeof(cl_float) * Nw);
+
+  cl_double *w_grid = malloc(sizeof(cl_double) * Nz);
   if (!w_grid) { perror("alloc w_grid"); abort(); }
+
+  cl_double *e_grid = malloc(sizeof(cl_double) * Ne);
+  if (!w_grid) { perror("alloc e_grid"); abort(); }
 
   // Allocate device buffers
 
-  cl_mem c_buf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(cl_float) * Nq * Nw * Nx, 0, &status);
+  cl_mem c_buf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(cl_double) Nx * Nq * Ns, 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
 
-  cl_mem x_buf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(cl_float) * Nq * Nw * Nx, 0, &status);
+  cl_mem V_buf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(cl_double) Nx * Nq * Ns, 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
 
-  cl_mem c_endog_buf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(cl_float) * Nq * Nw * Ns, 0, &status);
+  cl_mem x_grid_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nx, 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
 
-  cl_mem x_endog_buf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(cl_float) * Nq * Nw * Ns, 0, &status);
+  cl_mem s_grid_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nx, 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
 
-  // Allocate device images
+  cl_mem q_grid_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nq, 0, &status);
+  CHECK_CL_ERROR(status, "clCreateBuffer");
 
-  cl_mem_flags img_flags = CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR;
+  cl_mem w_grid_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nw, 0, &status);
+  CHECK_CL_ERROR(status, "clCreateBuffer");
 
-  cl_image_format img_format;
-  img_format.image_channel_order = CL_A;
-  img_format.image_channel_data_type = CL_FLOAT;
+  cl_mem e_grid_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Ne, 0, &status);
+  CHECK_CL_ERROR(status, "clCreateBuffer");
 
-  cl_mem c_img = clCreateImage3D(ctx, img_flags, img_format, Nw, Nq, Nx,
-                                 0, 0, c_array, status);
-  CHECK_CL_ERROR(status, "clCreateImage3D");
+  // Initialize Arrays
 
-  cl_mem V_img = clCreateImage3D(ctx, img_flags, img_format, Nw, Nq, Nx,
-                                 0, 0, V_array, status);
-  CHECK_CL_ERROR(status, "clCreateImage3D");
-
-  cl_mem EV_img = clCreateImage3D(ctx, img_flags, img_format, Nw, Nq, Nx,
-                                  0, 0, EV_array, status);
-  CHECK_CL_ERROR(status, "clCreateImage3D");
+  
 
   // Transfer to device
 
