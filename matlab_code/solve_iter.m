@@ -74,12 +74,12 @@ for iw = 1:Nw
         if any(isnan(c(:,iq,iw)))
             keyboard;
         end
+        s = x_grid - c(:,iq,is);
+        V(:,iq,is) = U(c(:,iq,is)) + bet*interp1(s_grid, EV(:,iq,is), s, 'linear');
     end
 
 end
 
-% Apply solution to calculate new value function
-V = U(c) + bet*EV;
 if any(any(any(isnan(V))))
     keyboard;
 end

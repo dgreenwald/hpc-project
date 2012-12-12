@@ -34,7 +34,7 @@ int main(int argc, char **argv)
 
   const cl_float tol, k, gam, bet, q_min, q_max, x_min, x_max, s_min, s_max;
   const cl_int Nx, Nq, Nz, Ny, Nw, Ns;
-  const cl_float* Pz, Py, Pw, z_grid, y_grid, w_grid;
+  const cl_float* Pz, Py, Pw, z_grid, y_grid, w_grid, max_vals;
 
   tol = 1e-6;  // Max change in function for termination
   k = 0.4;  // Polynomial grid curvature
@@ -51,6 +51,8 @@ int main(int argc, char **argv)
 
   Pz = {0.8, 0.2, 0.2, 0.8};
   z_grid = {0.96, 1.04};
+
+  // Define max vals...
 
   /*****
         Need code for mapprox_r and kron
@@ -152,8 +154,8 @@ int main(int argc, char **argv)
   get_timestamp(&time1);
 
   CALL_CL_GUARDED(clFinish, (queue));
-  SET_12_KERNEL_ARGS(knl, c_img, V_img, EV_img, c_endog, x_endog, s_grid, q_grid, w_grid,
-                     a_next, q_bar, gam, bet);
+  SET_13_KERNEL_ARGS(knl, c_img, V_img, EV_img, c_endog, x_endog, s_grid, q_grid, w_grid,
+                     a_next, q_bar, max_vals, gam, bet);
   ldim = {1, 1, 1};
   gdim = {Nw, Nq, Ns};
 
