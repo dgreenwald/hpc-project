@@ -4,15 +4,16 @@
 #include <stdio.h>
 #include <math.h>
 
-cl_double* poly_grid(double f_min, double f_max, double k, int N)
+cl_double* poly_grid(cl_double f_min, cl_double f_max, cl_double k, cl_int N)
 {
   cl_double *f = malloc(sizeof(cl_double)*N);
   if (!f) { perror("alloc error in poly_grid"); abort(); }
 
-  for (int ii = 1; ii < N; ++ii)
+  for (int ii = 0; ii < N; ++ii)
     {
-      f[ii] = f_min + (f_max - f_min) * pow(ii/(N-1), 1/k);
+      f[ii] = f_min + (f_max - f_min) * pow(((double) ii)/((double) (N-1)), 1/k);
     }
+  return f;
 }
 
 cl_double* getP(double u_b, double u_g, double dur_b, double dur_g, double udur_b, double udur_g,
@@ -61,6 +62,45 @@ cl_double* getP(double u_b, double u_g, double dur_b, double dur_g, double udur_
 
 }
 
+// Allocates double buffer
+cl_mem alloc_buf(cl_context ctx, cl_int N, int read, int write)
+{
+  cl_mem_flags flag;
+  cl_int status;
+  if (read == 1 && write == 1)
+    flag = CL_MEM_READ_WRITE;
+  else if (read == 1)
+    flag = CL_MEM_READ_ONLY;
+  else if (write == 1)
+    flag = CL_MEM_WRITE_ONLY;
+  else
+    { perror("bad flags in alloc_buf"); abort(); }
+
+  cl_mem buf = clCreateBuffer(ctx, flag, sizeof(cl_double) * N, 0, &status);
+  CHECK_CL_ERROR(status, "clCreateBuffer");
+  return buf;
+}
+
+// Write to cl_double buffer
+void write_buf(cl_command_queue queue, cl_mem buf, const cl_double *arr, cl_int N)
+{
+  CALL_CL_GUARDED(clEnqueueWriteBuffer,
+                  (queue, buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
+                   N * sizeof(cl_double), arr,
+                   0, NULL, NULL));
+  return;
+}
+
+// Read from cl_double buffer
+void read_buf(cl_command_queue queue, cl_mem buf, cl_double *arr, cl_int N)
+{
+  CALL_CL_GUARDED(clEnqueueReadBuffer,
+                  (queue, buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
+                   N * sizeof(cl_double), arr,
+                   0, NULL, NULL));
+  return;
+}
+
 int main(int argc, char **argv)
 {
 
@@ -80,8 +120,8 @@ int main(int argc, char **argv)
   char* knl_text;
   cl_kernel knl;
 
-  create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
-  // create_context_on("Intel", NULL, 0, &ctx, &queue, 0);
+  // create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
+  create_context_on("Intel", NULL, 0, &ctx, &queue, 0);
 
   // Define parameters
 
@@ -93,10 +133,10 @@ int main(int argc, char **argv)
   const cl_double bet = pow(0.95, 1/freq);
   const cl_double q_min = pow(0.8, 1/freq);
   const cl_double q_max = pow(1.25, 1/freq);
-  const cl_double x_min = 0;
+  const cl_double x_min = -10;
   const cl_double x_max = 100;
-  const cl_int Nx = 200;
-  const cl_int Nq = 50;
+  const cl_int Nx = 100;
+  const cl_int Nq = 10;
   const cl_int Nz = 2;
   const cl_int Ne = 2;
   const cl_int Ns = Nz*Ne;
@@ -104,12 +144,18 @@ int main(int argc, char **argv)
   cl_double* x_grid = poly_grid(x_min, x_max, k, Nx);
   cl_double* q_grid = poly_grid(q_min, q_max, 1.0, Nq); // 1.0 for even grid
 
-  cl_double z_grid[2];
-  z_grid[0] = 0.99;
-  z_grid[1] = 1.01;
-  cl_double e_grid[2];
-  e_grid[0] = 0.3;
-  e_grid[1] = 1.0;
+  const cl_double z_grid[2] = {0.99, 1.01};
+  const cl_double e_grid[2] = {0.3, 1.0};
+
+  const cl_int Npar = 7;
+  cl_double params[Npar];
+  params[0] = bet;
+  params[1] = gam;
+  params[2] = x_min;
+  params[3] = x_max;
+  params[4] = q_min;
+  params[5] = q_max;
+  params[6] = k;
 
   const cl_double u_b = 0.1;
   const cl_double u_g = 0.04;
@@ -122,9 +168,22 @@ int main(int argc, char **argv)
 
   cl_double *P = getP(u_b, u_g, dur_b, dur_g, udur_b, udur_g, rat_bg, rat_gb);
 
-  cl_double *w_grid;
+  /* // Outputting P matrix
+     for (int ii = 0; ii < Ns; ++ii)
+     {
+     for (int jj = 0; jj < Ns; ++jj)
+     printf("P[%d, %d] = %g  ", ii, jj, P[4*jj + ii]);
+     printf("\n");
+     }
+  */
+
+  cl_double w_grid[2];
   w_grid[0] = z_grid[0]*pow(1 - u_b, alp);
   w_grid[1] = z_grid[1]*pow(1 - u_g, alp);
+
+  cl_double q_bar[2];
+  q_bar[0] = 1/z_grid[0];
+  q_bar[1] = 1/z_grid[1];
 
   // Allocate CPU memory
   cl_double *c_all = malloc(sizeof(cl_double) * Nx * Nq * Ns);
@@ -135,104 +194,91 @@ int main(int argc, char **argv)
 
   // Initialize Matrices
 
+  int it = 0;
   for (int ix = 0; ix < Nx; ++ix)
     for (int iq = 0; iq < Nq; ++iq)
       for (int iz = 0; iz < Nz; ++iz)
         for (int ie = 0; ie < Ne; ++ie)
           {
-            c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = x_grid[ix] + w_grid[iz]*e_grid[ie]; // Zero bond solution
-            V_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = pow(c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie], 1-gam)/(1-gam); 
+            c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = x_grid[ix] + w_grid[iz]*e_grid[ie] - x_min; // Zero bond solution
+            V_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = pow(c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie], 1-gam)/(1-gam);
           }
+
+  /*
+  printf("before kernel \n");
+  for (int ii = 0; ii < 100; ++ii)
+    {
+      printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
+    }
+  */
 
   // Allocate device buffers
 
-  cl_mem c_buf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(cl_double) * Nx * Nq * Ns, 0, &status);
-  CHECK_CL_ERROR(status, "clCreateBuffer");
-
-  cl_mem V_buf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(cl_double) * Nx * Nq * Ns, 0, &status);
-  CHECK_CL_ERROR(status, "clCreateBuffer");
-
-  cl_mem x_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nx, 0, &status);
-  CHECK_CL_ERROR(status, "clCreateBuffer");
-
-  cl_mem q_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nq, 0, &status);
-  CHECK_CL_ERROR(status, "clCreateBuffer");
-
-  cl_mem w_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nz, 0, &status);
-  CHECK_CL_ERROR(status, "clCreateBuffer");
-
-  cl_mem e_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Ne, 0, &status);
-  CHECK_CL_ERROR(status, "clCreateBuffer");
+  cl_mem c_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1);
+  cl_mem V_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1);
+  cl_mem x_buf = alloc_buf(ctx, Nx, 1, 0);
+  cl_mem q_buf = alloc_buf(ctx, Nq, 1, 0);
+  cl_mem w_buf = alloc_buf(ctx, Nz, 1, 0);
+  cl_mem e_buf = alloc_buf(ctx, Ne, 1, 0);
+  cl_mem P_buf = alloc_buf(ctx, Ns*Ns, 1, 0);
+  cl_mem q_bar_buf = alloc_buf(ctx, Nz, 1, 0);
+  cl_mem params_buf = alloc_buf(ctx, Npar, 1, 0);
 
   // Transfer to device
 
-  CALL_CL_GUARDED(clEnqueueWriteBuffer,
-                  (queue, c_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   Nx * Nq * Ns * sizeof(cl_double), c_all,
-                   0, NULL, NULL));
-
-  CALL_CL_GUARDED(clEnqueueWriteBuffer,
-                  (queue, V_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   Nx * Nq * Ns * sizeof(cl_double), V_all,
-                   0, NULL, NULL));
-
-  CALL_CL_GUARDED(clEnqueueWriteBuffer,
-                  (queue, x_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   Nx * sizeof(cl_double), x_grid,
-                   0, NULL, NULL));
-
-  CALL_CL_GUARDED(clEnqueueWriteBuffer,
-                  (queue, q_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   Nq * sizeof(cl_double), q_grid,
-                   0, NULL, NULL));
-
-  CALL_CL_GUARDED(clEnqueueWriteBuffer,
-                  (queue, w_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   Nz * sizeof(cl_double), w_grid,
-                   0, NULL, NULL));
-
-  CALL_CL_GUARDED(clEnqueueWriteBuffer,
-                  (queue, e_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   Ne * sizeof(cl_double), e_grid,
-                   0, NULL, NULL));
+  write_buf(queue, c_buf, c_all, Nx*Nq*Ns);
+  write_buf(queue, V_buf, V_all, Nx*Nq*Ns);
+  write_buf(queue, x_buf, x_grid, Nx);
+  write_buf(queue, q_buf, q_grid, Nq);
+  write_buf(queue, w_buf, w_grid, Nz);
+  write_buf(queue, e_buf, e_grid, Ne);
+  write_buf(queue, P_buf, P, Ns*Ns);
+  write_buf(queue, q_bar_buf, q_bar, Nz);
+  write_buf(queue, params_buf, params, Npar);
 
   // Run solve.cl on device
 
   knl_text = read_file("solve.cl");
-  knl = kernel_from_string(ctx, knl_text, "solve", NULL);
+  char buildOptions[50];
+  sprintf(buildOptions, "-DNX=%u -DNQ=%u -DNZ=%u -DNE=%u -DNS=%u",
+          Nx, Nq, Nz, Ne, Ns);
+  knl = kernel_from_string(ctx, knl_text, "solve", buildOptions);
   free(knl_text);
 
   get_timestamp(&time1);
 
   CALL_CL_GUARDED(clFinish, (queue));
-  SET_11_KERNEL_ARGS(knl, c_buf, V_buf, x_buf, q_buf, w_buf, e_buf, Nq, Nz, Ne, bet, gam);
+  SET_9_KERNEL_ARGS(knl, c_buf, V_buf, x_buf, q_buf, w_buf, e_buf, 
+		    P_buf, q_bar_buf, params_buf);
 
-  size_t ldim[] = {Nx, 1};
-  size_t gdim[] = {Nx, Nq};
+  size_t ldim[2] = {1, 1};
+  size_t gdim[2] = {Nx, Nq};
 
   CALL_CL_GUARDED(clEnqueueNDRangeKernel,
-                  (queue, knl,
-                   /*dimensions*/ 2, NULL, gdim, ldim,
-                   0, NULL, NULL));
+  (queue, knl,
+  2, NULL, gdim, ldim,
+  0, NULL, NULL));
 
   CALL_CL_GUARDED(clFinish, (queue));
 
-  clReleaseKernel(knl); // Release solve_endog kernel
+  clReleaseKernel(knl); // Release kernel
 
   get_timestamp(&time2);
   elapsed = timestamp_diff_in_seconds(time1,time2);
-  printf("%f s\n", elapsed);
+  printf("Time elapsed: %f s\n", elapsed);
 
   // Transfer from device
-  CALL_CL_GUARDED(clEnqueueReadBuffer,
-                  (queue, c_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   Nx * Nq * Ns * sizeof(cl_double), c_all,
-                   0, NULL, NULL));
 
-  CALL_CL_GUARDED(clEnqueueReadBuffer,
-                  (queue, V_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   Nx * Nq * Ns * sizeof(cl_double), V_all,
-                   0, NULL, NULL));
+  read_buf(queue, c_buf, c_all, Nx*Nq*Ns);
+  read_buf(queue, V_buf, V_all, Nx*Nq*Ns);
+
+  /*
+  printf("after kernel \n");
+  for (int ii = 0; ii < 100; ++ii)
+    {
+      printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
+    }
+  */
 
   // Clean up
   CALL_CL_GUARDED(clFinish, (queue));
@@ -242,11 +288,18 @@ int main(int argc, char **argv)
   CALL_CL_GUARDED(clReleaseMemObject, (q_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (w_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (e_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (P_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (q_bar_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (params_buf));
+  CALL_CL_GUARDED(clReleaseCommandQueue, (queue));
+  CALL_CL_GUARDED(clReleaseContext, (ctx));
 
   free(c_all);
   free(V_all);
   free(x_grid);
   free(q_grid);
   free(P);
+
+  return 0;
 
 }
