@@ -3,18 +3,62 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
-/* #include <gsl/gsl_errno.h> */
-/* #include <gsl/gsl_interp.h> */
 
-double* poly_grid(double f_min, double f_max, double k, int N)
+cl_double* poly_grid(double f_min, double f_max, double k, int N)
 {
-  double *f = malloc(sizeof(double)*N);
+  cl_double *f = malloc(sizeof(cl_double)*N);
   if (!f) { perror("alloc error in poly_grid"); abort(); }
 
   for (int ii = 1; ii < N; ++ii)
     {
       f[ii] = f_min + (f_max - f_min) * pow(ii/(N-1), 1/k);
     }
+}
+
+cl_double* getP(double dur_b, double dur_g, double udur_b, double udur_g,
+                double rat_bg, double rat_gb)
+{
+  cl_double *P = malloc(sizeof(cl_double)*16);
+  if (!f) { perror("alloc error in getP"); abort(); }
+
+  const cl_double pbb = 1 - 1/dur_b;
+  const cl_double pgg = 1 - 1/dur_g;
+
+  P[4*1 + 0] = pbb/udur_b;
+  P[4*3 + 2] = pgg/udur_g;
+  P[4*0 + 0] = pbb - P[4*1 + 0];
+  P[4*2 + 2] = pgg - P[4*3 + 2];
+
+  P[4*2 + 0] = rat_bg*(1-pbb)*P[4*2 + 2]/pgg;
+  P[4*0 + 2] = rat_gb*(1-pgg)*P[4*0 + 0]/pbb;
+  P[4*3 + 0] = 1 - pbb - P[4*2 + 0];
+  P[4*1 + 2] = 1 - pgg - P[4*0 + 2];
+
+  P[4*0 + 1] = (pbb*u_b - P[4*0 + 0]*u_b)/(1 - u_b);
+  P[4*2 + 1] = ((1-pbb)*u_g - P[4*2 + 0]*u_b)/(1 - u_b);
+  P[4*0 + 3] = ((1-pgg)*u_b - P[4*0 + 2]*u_g)/(1 - u_g);
+  P[4*2 + 3] = (pgg*u_g - P[4*2 + 2]*u_g)/(1 - u_g);
+
+  P[4*1 + 1] = pbb - P[4*0 + 1];
+  P[4*3 + 1] = 1 - pbb - P[4*2 + 1];
+  P[4*1 + 3] = 1 - pgg - P[4*0 + 3];
+  P[4*3 + 3] = pgg - P[4*2 + 3];
+
+  // Check matrix
+  cl_double Psum;
+  for (int ii = 0; ii < 4; ++ii)
+    {
+      Psum = 0;
+      for (int jj = 0; jj < 4; ++jj)
+        {
+          if (P[4*jj + ii] < 0) { perror("P < 0"); abort(); }
+          Psum += P[4*jj + ii];
+        }
+      if (Psum != 1) { perror("Psum != 1"); abort(); }
+    }
+
+  return P;
+
 }
 
 int main(int argc, char **argv)
@@ -42,52 +86,58 @@ int main(int argc, char **argv)
 
   // Define parameters
 
-  const cl_double tol, k, gam, bet, q_min, q_max, x_min, x_max, s_min, s_max;
-  const cl_int Nx, Nq, Nz, Ne, Ns;
-  const cl_double* Pz, Py, Pw, z_grid, y_grid, w_grid, max_vals;
+  const freq = 4;
+  const cl_double tol = 1e-6;
+  const cl_double k = 0.4;
+  const cl_double alp = 0.36;
+  const cl_double gam = 2.0;
+  const cl_double bet = pow(0.95, 1/freq);
+  const cl_double q_min = pow(0.8, 1/freq);
+  const cl_double q_max = pow(1.25, 1/freq);
+  const cl_double x_min = 0;
+  const cl_double x_max = 100;
+  const cl_int Nx = 200;
+  const cl_int Nq = 50;
+  const cl_int Nz = 2;
+  const cl_int Ne = 2;
+  const cl_int Ns = Nz*Ne;
 
-  tol = 1e-6;  // Max change in function for termination
-  k = 0.4;  // Polynomial grid curvature
+  const cl_double* x_grid = poly_grid(x_min, x_max, k, Nx);
+  const cl_double* q_grid = poly_grid(q_min, q_max, 1.0, Nq); // 1.0 for even grid
+  const cl_double* z_grid = {0.99, 1.01};
+  const cl_double* e_grid = {0.3, 1.0};
 
-  Nx = 100;  // No. of points in total wealth grid
-  Nq = 100;  // No. of points in bond price grid
-  Nz = 2;  // No. of aggregate productivity states
-  Ne = 2;  // No. of idiosyncratic productivity states
-  Ns = Nz*Ne;  // Number of points in savings grid
+  const cl_double ub = 0.1;
+  const cl_double ug  0.04;
+  const cl_double dur_b = 8;
+  const cl_double dur_g = 8;
+  const cl_double udur_b = 2.5;
+  const cl_double udur_g = 1.5;
+  const cl_double rat_bg = 0.75;
+  const cl_double rat_gb = 1.25;
 
-  gam = 2;
-  bet = 0.95;
+  const cl_double *P = getP(dur_b, dur_g, udur_b, udur_g, rat_bg, rat_gb);
 
-  Pz = {0.8, 0.2, 0.2, 0.8};
-  z_grid = {0.96, 1.04};
-
-  // Define max vals...
-
-  /*****
-        Need code for mapprox_r and kron
-  *****/
+  const cl_double *w_grid = {z_grid[0]*pow(1 - u_b, alp),
+                             z_grid[1]*pow(1 - u_g, alp)};
 
   // Allocate CPU memory
-  cl_double *V_all = malloc(sizeof(cl_double) * Nx * Nq * Ns);
-  if (!V_all) { perror("alloc c_endog"); abort(); }
-
   cl_double *c_all = malloc(sizeof(cl_double) * Nx * Nq * Ns);
   if (!c_all) { perror("alloc x_endog"); abort(); }
 
-  cl_double * x_grid = malloc(sizeof(cl_double) * Nx);
-  if (!x_grid) { perror("alloc x_grid"); abort(); }
+  cl_double *V_all = malloc(sizeof(cl_double) * Nx * Nq * Ns);
+  if (!V_all) { perror("alloc c_endog"); abort(); }
 
-  cl_double *s_grid = malloc(sizeof(cl_double) * Ns);
-  if (!s_grid) { perror("alloc s_grid"); abort(); }
+  // Initialize Matrices
 
-  cl_double *q_grid = malloc(sizeof(cl_double) * Nq);
-  if (!q_grid) { perror("alloc q_grid"); abort(); }
-
-  cl_double *w_grid = malloc(sizeof(cl_double) * Nz);
-  if (!w_grid) { perror("alloc w_grid"); abort(); }
-
-  cl_double *e_grid = malloc(sizeof(cl_double) * Ne);
-  if (!w_grid) { perror("alloc e_grid"); abort(); }
+  for (int ix = 0; ix < Nx; ++ix)
+    for (int iq = 0; iq < Nq; ++iq)
+      for (int iz = 0; is < Nz; ++iz)
+        for (int iz = 0; is < Ne; ++ie)
+          {
+            c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = x_grid[ix] + w_grid[iz]*e_grid[ie]; // Zero bond solution
+            V_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = pow(c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie], 1-gam)/(1-gam); 
+          }
 
   // Allocate device buffers
 
@@ -97,70 +147,67 @@ int main(int argc, char **argv)
   cl_mem V_buf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(cl_double) Nx * Nq * Ns, 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
 
-  cl_mem x_grid_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nx, 0, &status);
+  cl_mem x_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nx, 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
 
-  cl_mem s_grid_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nx, 0, &status);
+  cl_mem q_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nq, 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
 
-  cl_mem q_grid_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nq, 0, &status);
+  cl_mem w_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nz, 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
 
-  cl_mem w_grid_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nw, 0, &status);
+  cl_mem e_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Ne, 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
-
-  cl_mem e_grid_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Ne, 0, &status);
-  CHECK_CL_ERROR(status, "clCreateBuffer");
-
-  // Initialize Arrays
-
-  
 
   // Transfer to device
 
   CALL_CL_GUARDED(clEnqueueWriteBuffer,
-                  (queue, s_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   Ns * sizeof(cl_float), s_grid,
+                  (queue, c_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
+                   Nx * Nq * Ns * sizeof(cl_double), c_all,
+                   0, NULL, NULL));
+
+  CALL_CL_GUARDED(clEnqueueWriteBuffer,
+                  (queue, V_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
+                   Nx * Nq * Ns * sizeof(cl_double), V_all,
+                   0, NULL, NULL));
+
+  CALL_CL_GUARDED(clEnqueueWriteBuffer,
+                  (queue, x_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
+                   Nx * sizeof(cl_double), x_grid,
                    0, NULL, NULL));
 
   CALL_CL_GUARDED(clEnqueueWriteBuffer,
                   (queue, q_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   Nq * sizeof(cl_float), q_grid,
+                   Nq * sizeof(cl_double), q_grid,
                    0, NULL, NULL));
 
   CALL_CL_GUARDED(clEnqueueWriteBuffer,
                   (queue, w_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   Mw * sizeof(cl_float), w_grid,
+                   Nz * sizeof(cl_double), w_grid,
                    0, NULL, NULL));
 
-  origin = {0, 0, 0};
-  region = {Nw, Nq, Ns};
-
-  CALL_CL_GUARDED(clEnqueueWriteImage,
-                  (queue, c_img, /*blocking*/ CL_FALSE, origin, region,
-                   0, 0, c_array, 0, NULL, NULL));
-
-  CALL_CL_GUARDED(clEnqueueWriteImage,
-                  (queue, V_img, /*blocking*/ CL_FALSE, origin, region,
-                   0, 0, V_array, 0, NULL, NULL));
+  CALL_CL_GUARDED(clEnqueueWriteBuffer,
+                  (queue, e_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
+                   Ne * sizeof(cl_double), e_grid,
+                   0, NULL, NULL));
 
   // Run solve_endog code on device
 
-  knl_text = read_file("solve_endog.cl");
-  knl = kernel_from_string(ctx, knl_text, "fill", NULL);
+  knl_text = read_file("solve.cl");
+  knl = kernel_from_string(ctx, knl_text, "solve", NULL);
   free(knl_text);
 
   get_timestamp(&time1);
 
   CALL_CL_GUARDED(clFinish, (queue));
-  SET_13_KERNEL_ARGS(knl, c_img, V_img, EV_img, c_endog, x_endog, s_grid, q_grid, w_grid,
-                     a_next, q_bar, max_vals, gam, bet);
-  ldim = {1, 1, 1};
-  gdim = {Nw, Nq, Ns};
+  SET_11_KERNEL_ARGS(knl, c_buf, V_buf, x_buf, q_buf, w_buf, e_buf, Nq, Nz, Ne, bet, gam);
+
+  ldim = {Nx, 1};
+  gdim = {Nx, Nq};
 
   CALL_CL_GUARDED(clEnqueueNDRangeKernel,
                   (queue, knl,
-                   /*dimensions*/ 3, NULL, gdim, ldim,
+                   /*dimensions*/ 2, NULL, gdim, ldim,
                    0, NULL, NULL));
 
   CALL_CL_GUARDED(clFinish, (queue));
@@ -173,61 +220,28 @@ int main(int argc, char **argv)
 
   // Transfer from device
   CALL_CL_GUARDED(clEnqueueReadBuffer,
-                  (queue, c_endog_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   Ns * sizeof(cl_float), c_endog,
+                  (queue, c_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
+                   Nx * Nq * Ns * sizeof(cl_double), c_all,
                    0, NULL, NULL));
 
   CALL_CL_GUARDED(clEnqueueReadBuffer,
-                  (queue, x_endog_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   Ns * sizeof(cl_float), x_endog,
+                  (queue, V_buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
+                   Nx * Nq * Ns * sizeof(cl_double), V_all,
                    0, NULL, NULL));
-
-  /* CALL_CL_GUARDED(clEnqueueReadImage, */
-  /*                 (queue, EV_img, /\*blocking*\/ CL_FALSE, origin, region, */
-  /*                  0, 0, EV_array, 0, NULL, NULL)); */
-
-  // Interpolate to return from c_endog and x_endog to x_grid, fill in c_array, V_array
-
-  gsl_interp_accel *acc;
-  gsl_interp *interp1;  
-
-  for (int iw = 0; iw < Nw; ++iw)
-    {
-      for (int iq = 0; iq < Nq; ++iq)
-	{
-	  acc = gsl_interp_accel_alloc(); // Need to allocate/free each time?
-	  interp1 = gsl_interp_alloc(gsl_interp_linear, Ns); // Need to allocate/free each time?
-	  
-	  for (int ix = 0; ix < Nx; ++ix)
-	    {
-	      c_array[iw][iq][ix] = gsl_interp_eval(x_endog[iw][iq], c_endog[iw][iq], x_grid[ix], acc);
-	    }
-
-	  gsl_interp_free(acc); // Need to allocate/free each time?
-	  gsl_interp_free(interp1); // Need to allocate/free each time?
-	}
-    }
 
   // Clean up
   CALL_CL_GUARDED(clFinish, (queue));
+  CALL_CL_GUARDED(clReleaseMemObject, (c_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (V_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (x_buf));
-  CALL_CL_GUARDED(clReleaseMemObject, (s_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (q_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (w_buf));
-  CALL_CL_GUARDED(clReleaseMemObject, (c_endog_buf));
-  CALL_CL_GUARDED(clReleaseMemObject, (x_endog_buf));
-  CALL_CL_GUARDED(clReleaseMemObject, (c_img));
-  CALL_CL_GUARDED(clReleaseMemObject, (V_img));
-  CALL_CL_GUARDED(clReleaseMemObject, (EV_img));
+  CALL_CL_GUARDED(clReleaseMemObject, (e_buf));
 
-  free(c_endog);
-  free(x_endog);
-  free(c_array);
-  free(V_array);
-  free(EV_array);
+  free(c_all);
+  free(V_all);
   free(x_grid);
-  free(s_grid);
   free(q_grid);
-  free(w_grid);
+  free(P);
 
 }
