@@ -15,11 +15,11 @@ cl_double* poly_grid(double f_min, double f_max, double k, int N)
     }
 }
 
-cl_double* getP(double dur_b, double dur_g, double udur_b, double udur_g,
+cl_double* getP(double u_b, double u_g, double dur_b, double dur_g, double udur_b, double udur_g,
                 double rat_bg, double rat_gb)
 {
   cl_double *P = malloc(sizeof(cl_double)*16);
-  if (!f) { perror("alloc error in getP"); abort(); }
+  if (!P) { perror("alloc error in getP"); abort(); }
 
   const cl_double pbb = 1 - 1/dur_b;
   const cl_double pgg = 1 - 1/dur_g;
@@ -78,15 +78,14 @@ int main(int argc, char **argv)
   cl_int status;
 
   char* knl_text;
-  cl_kernel solve;
-
-  size_t ldim, gdim;
+  cl_kernel knl;
 
   create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
+  // create_context_on("Intel", NULL, 0, &ctx, &queue, 0);
 
   // Define parameters
 
-  const freq = 4;
+  const cl_double freq = 4;
   const cl_double tol = 1e-6;
   const cl_double k = 0.4;
   const cl_double alp = 0.36;
@@ -102,24 +101,30 @@ int main(int argc, char **argv)
   const cl_int Ne = 2;
   const cl_int Ns = Nz*Ne;
 
-  const cl_double* x_grid = poly_grid(x_min, x_max, k, Nx);
-  const cl_double* q_grid = poly_grid(q_min, q_max, 1.0, Nq); // 1.0 for even grid
-  const cl_double* z_grid = {0.99, 1.01};
-  const cl_double* e_grid = {0.3, 1.0};
+  cl_double* x_grid = poly_grid(x_min, x_max, k, Nx);
+  cl_double* q_grid = poly_grid(q_min, q_max, 1.0, Nq); // 1.0 for even grid
 
-  const cl_double ub = 0.1;
-  const cl_double ug  0.04;
-  const cl_double dur_b = 8;
-  const cl_double dur_g = 8;
+  cl_double z_grid[2];
+  z_grid[0] = 0.99;
+  z_grid[1] = 1.01;
+  cl_double e_grid[2];
+  e_grid[0] = 0.3;
+  e_grid[1] = 1.0;
+
+  const cl_double u_b = 0.1;
+  const cl_double u_g = 0.04;
+  const cl_double dur_b = 8.0;
+  const cl_double dur_g = 8.0;
   const cl_double udur_b = 2.5;
   const cl_double udur_g = 1.5;
   const cl_double rat_bg = 0.75;
   const cl_double rat_gb = 1.25;
 
-  const cl_double *P = getP(dur_b, dur_g, udur_b, udur_g, rat_bg, rat_gb);
+  cl_double *P = getP(u_b, u_g, dur_b, dur_g, udur_b, udur_g, rat_bg, rat_gb);
 
-  const cl_double *w_grid = {z_grid[0]*pow(1 - u_b, alp),
-                             z_grid[1]*pow(1 - u_g, alp)};
+  cl_double *w_grid;
+  w_grid[0] = z_grid[0]*pow(1 - u_b, alp);
+  w_grid[1] = z_grid[1]*pow(1 - u_g, alp);
 
   // Allocate CPU memory
   cl_double *c_all = malloc(sizeof(cl_double) * Nx * Nq * Ns);
@@ -132,8 +137,8 @@ int main(int argc, char **argv)
 
   for (int ix = 0; ix < Nx; ++ix)
     for (int iq = 0; iq < Nq; ++iq)
-      for (int iz = 0; is < Nz; ++iz)
-        for (int iz = 0; is < Ne; ++ie)
+      for (int iz = 0; iz < Nz; ++iz)
+        for (int ie = 0; ie < Ne; ++ie)
           {
             c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = x_grid[ix] + w_grid[iz]*e_grid[ie]; // Zero bond solution
             V_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = pow(c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie], 1-gam)/(1-gam); 
@@ -141,10 +146,10 @@ int main(int argc, char **argv)
 
   // Allocate device buffers
 
-  cl_mem c_buf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(cl_double) Nx * Nq * Ns, 0, &status);
+  cl_mem c_buf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(cl_double) * Nx * Nq * Ns, 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
 
-  cl_mem V_buf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(cl_double) Nx * Nq * Ns, 0, &status);
+  cl_mem V_buf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(cl_double) * Nx * Nq * Ns, 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
 
   cl_mem x_buf = clCreateBuffer(ctx, CL_MEM_READ_ONLY, sizeof(cl_double) * Nx, 0, &status);
@@ -191,7 +196,7 @@ int main(int argc, char **argv)
                    Ne * sizeof(cl_double), e_grid,
                    0, NULL, NULL));
 
-  // Run solve_endog code on device
+  // Run solve.cl on device
 
   knl_text = read_file("solve.cl");
   knl = kernel_from_string(ctx, knl_text, "solve", NULL);
@@ -202,8 +207,8 @@ int main(int argc, char **argv)
   CALL_CL_GUARDED(clFinish, (queue));
   SET_11_KERNEL_ARGS(knl, c_buf, V_buf, x_buf, q_buf, w_buf, e_buf, Nq, Nz, Ne, bet, gam);
 
-  ldim = {Nx, 1};
-  gdim = {Nx, Nq};
+  size_t ldim[] = {Nx, 1};
+  size_t gdim[] = {Nx, Nq};
 
   CALL_CL_GUARDED(clEnqueueNDRangeKernel,
                   (queue, knl,

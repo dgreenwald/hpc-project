@@ -132,7 +132,7 @@ cl_kernel kernel_from_string(cl_context ctx,
   CALL_CL_GUARDED(clSetKernelArg, (knl, 7, sizeof(arg7), &arg7)); \
   CALL_CL_GUARDED(clSetKernelArg, (knl, 8, sizeof(arg8), &arg8));
 
-#define SET_10_KERNEL_ARGS(knl, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9,) \
+#define SET_10_KERNEL_ARGS(knl, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9) \
   CALL_CL_GUARDED(clSetKernelArg, (knl, 0, sizeof(arg0), &arg0)); \
   CALL_CL_GUARDED(clSetKernelArg, (knl, 1, sizeof(arg1), &arg1)); \
   CALL_CL_GUARDED(clSetKernelArg, (knl, 2, sizeof(arg2), &arg2)); \
