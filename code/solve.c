@@ -120,8 +120,8 @@ int main(int argc, char **argv)
   char* knl_text;
   cl_kernel knl;
 
-  // create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
-  create_context_on("Intel", NULL, 0, &ctx, &queue, 0);
+  create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
+  // create_context_on("Intel", NULL, 0, &ctx, &queue, 0);
 
   // Define parameters
 
@@ -135,7 +135,8 @@ int main(int argc, char **argv)
   const cl_double q_max = pow(1.25, 1/freq);
   const cl_double x_min = -10;
   const cl_double x_max = 100;
-  const cl_int Nx = 100;
+  const cl_int Nx = 2000;
+  const cl_int Nx_loc = 128;
   const cl_int Nq = 10;
   const cl_int Nz = 2;
   const cl_int Ne = 2;
@@ -239,9 +240,9 @@ int main(int argc, char **argv)
   // Run solve.cl on device
 
   knl_text = read_file("solve.cl");
-  char buildOptions[50];
-  sprintf(buildOptions, "-DNX=%u -DNQ=%u -DNZ=%u -DNE=%u -DNS=%u",
-          Nx, Nq, Nz, Ne, Ns);
+  char buildOptions[100];
+  sprintf(buildOptions, "-DNX=%u -DNX_LOC=%u -DNQ=%u -DNZ=%u -DNE=%u -DNS=%u",
+          Nx, Nx_loc, Nq, Nz, Ne, Ns);
   knl = kernel_from_string(ctx, knl_text, "solve", buildOptions);
   free(knl_text);
 
@@ -251,8 +252,10 @@ int main(int argc, char **argv)
   SET_9_KERNEL_ARGS(knl, c_buf, V_buf, x_buf, q_buf, w_buf, e_buf, 
 		    P_buf, q_bar_buf, params_buf);
 
-  size_t ldim[2] = {1, 1};
-  size_t gdim[2] = {Nx, Nq};
+  size_t ldim[2] = {Nx_loc, 1};
+  size_t gdim[2] = {ldim[0]*((Nx-1)/(ldim[0]-1) + 1), Nq};
+
+  printf("gdim[0] = %d\n", gdim[0]);
 
   CALL_CL_GUARDED(clEnqueueNDRangeKernel,
   (queue, knl,
