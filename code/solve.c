@@ -136,7 +136,7 @@ int main(int argc, char **argv)
   const cl_double x_min = -10;
   const cl_double x_max = 100;
   const cl_int Nx = 2000;
-  const cl_int Nx_loc = 128;
+  const cl_int Nx_loc = 64;
   const cl_int Nq = 10;
   const cl_int Nz = 2;
   const cl_int Ne = 2;
@@ -252,15 +252,14 @@ int main(int argc, char **argv)
   SET_9_KERNEL_ARGS(knl, c_buf, V_buf, x_buf, q_buf, w_buf, e_buf, 
 		    P_buf, q_bar_buf, params_buf);
 
-  size_t ldim[2] = {Nx_loc, 1};
-  size_t gdim[2] = {ldim[0]*((Nx-1)/(ldim[0]-1) + 1), Nq};
+  size_t ldim[3] = {Nx_loc, 1, Ns};
+  size_t gdim[3] = {ldim[0]*((Nx-1)/(ldim[0]-1) + 1), Nq, Ns};
 
   printf("gdim[0] = %d\n", gdim[0]);
 
   CALL_CL_GUARDED(clEnqueueNDRangeKernel,
-  (queue, knl,
-  2, NULL, gdim, ldim,
-  0, NULL, NULL));
+		  (queue, knl, /*dimension*/ 3, 
+		   NULL, gdim, ldim, 0, NULL, NULL));
 
   CALL_CL_GUARDED(clFinish, (queue));
 
