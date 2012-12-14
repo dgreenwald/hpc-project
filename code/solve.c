@@ -120,8 +120,9 @@ int main(int argc, char **argv)
   char* knl_text;
   cl_kernel knl;
 
-  create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
+  // create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
   // create_context_on("Intel", NULL, 0, &ctx, &queue, 0);
+  create_context_on("Advanced", NULL, 0, &ctx, &queue, 0);
 
   // Define parameters
 
@@ -205,13 +206,11 @@ int main(int argc, char **argv)
             V_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = pow(c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie], 1-gam)/(1-gam);
           }
 
-  /*
   printf("before kernel \n");
   for (int ii = 0; ii < 100; ++ii)
     {
       printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
     }
-  */
 
   // Allocate device buffers
 
@@ -274,13 +273,12 @@ int main(int argc, char **argv)
   read_buf(queue, c_buf, c_all, Nx*Nq*Ns);
   read_buf(queue, V_buf, V_all, Nx*Nq*Ns);
 
-  /*
+
   printf("after kernel \n");
   for (int ii = 0; ii < 100; ++ii)
     {
       printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
     }
-  */
 
   // Clean up
   CALL_CL_GUARDED(clFinish, (queue));
