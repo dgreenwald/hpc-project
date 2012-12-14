@@ -23,77 +23,75 @@ kernel void solve(global double* c_all, global double* V_all,
                   constant double* P, constant double* q_bar,
                   constant double* params)
 {
-  int jx, jq;
 
-  double x_next, q_next, b_x, b_q, V_j, dU_j;
-  double EV_i[NS], EdU_i[NS];
+  int gx = get_global_id(0);
+  int lx = get_local_id(0);
+  int x_groups = get_num_groups(0);
 
-  // local double c_endog_loc[NX][NS];
-  // local double x_endog_loc[NX][NS];
-
-  // Unpack parameters
-  double bet = params[0];
-  double gam = params[1];
-  double x_min = params[2];
-  double x_max = params[3];
-  double q_min = params[4];
-  double q_max = params[5];
-  double k = params[6];
-
-  // Calculate expectations given policy function
-  int gix = get_global_id(0);
-  int giq = get_global_id(1);
-  int lix = get_local_id(0);
-  int liq = get_local_id(1);
-  // is = get_global_id(2);
-
-  /*
-    x_next = x_grid[gix];
-    jx = floor((NX-1)*pow((x_next - x_min)/(x_max - x_min), k));
-    b_x = (x_next - x_grid[jx])/(x_grid[jx+1] - x_grid[jx]);
-  */
-
-  // Initialize local vectors
-  for (int is = 0; is < NS; ++is)
+  if (gx < NX)
     {
-      EV_i[is] = 0.0;
-      EdU_i[is] = 0.0;
-    }
+      int gq = get_global_id(1);
+      int gs = get_global_id(2);
+      int gz = gs/NZ;
+      int ge = gs - gz;
 
-  x_next = x_grid[gix];
-  jx = gix;
-  b_x = 0;
+      int jx, jq;
+      double x_next, q_next, b_x, b_q, V_next, dU_next;
 
-  for (int jz = 0; jz < NZ; ++jz)
-    {
-      q_next = q_bar[jz];
+      local double EV[NX_LOC][NS];
+      local double EdU[NX_LOC][NS];
+      local double c_endog_loc[NX_LOC][NS];
+      local double x_endog_loc[NX_LOC][NS];
+      local double x_grid_loc[NX_LOC];
+
+      // Unpack parameters
+      const double bet = params[0];
+      const double gam = params[1];
+      const double x_min = params[2];
+      const double x_max = params[3];
+      const double q_min = params[4];
+      const double q_max = params[5];
+      const double k = params[6];
+
+      /*
+        x_next = x_grid[gx];
+        jx = floor((NX-1)*pow((x_next - x_min)/(x_max - x_min), k));
+        b_x = (x_next - x_grid[jx])/(x_grid[jx+1] - x_grid[jx]);
+      */
+
+      // Initialize local vectors
+      EV[lx][gs] = 0.0;
+      EdU[lx][gs] = 0.0;
+
+      x_next = x_grid[gx];
+      jx = gx;
+      b_x = 0;
+
+      q_next = q_bar[gz];
       jq = floor((NQ-1)*(q_next - q_min)/(q_max - q_min));
       b_q = (q_next - q_grid[jq])/(q_grid[jq+1] - q_grid[jq]);
-      for (int je = 0; je < NE; ++je)
+
+      V_next = interp2(V_all, b_x, b_q, jx, jq, gz, ge);
+      dU_next = pow(interp2(c_all, b_x, b_q, jx, jq, gz, ge), -gam);
+      for (int is = 0; is < NS; ++is)
         {
-          V_j = interp2(V_all, b_x, b_q, jx, jq, jz, je);
-          dU_j = pow(interp2(c_all, b_x, b_q, jx, jq, jz, je), -gam);
-          for (int iz = 0; iz < NZ; ++iz)
-            {
-              for (int ie = 0; ie < NE; ++ie)
-                {
-                  EV_i[NE*iz + ie] += P[NS*(NE*jz+je) + (NE*iz+ie)]*V_j;
-                  EdU_i[NE*iz + ie] += P[NS*(NE*jz+je) + (NE*iz+ie)]*dU_j;
-                }
-            }
+          EV[lx][is] += P[NS*gs + is]*V_next;
+          EdU[lx][is] += P[NS*gs + is]*dU_next;
         }
-    }
 
-  for (int iz = 0; iz < NZ; ++iz)
-    {
-      for (int ie = 0; ie < NE; ++ie)
+      c_endog_loc[lx][gs] = pow(bet*EdU[lx][gs]/q_grid[gq], -1/gam);
+      x_endog_loc[lx][gs] = c_endog_loc[lx][gs] + x_grid[gx]*q_grid[gq] - w_grid[gz]*e_grid[ge];
+
+      barrier(CLK_LOCAL_MEM_FENCE);
+
+      /*
+      for (int iwg = 0; iwg < x_groups; ++iwg)
         {
-          c_endog_loc[lix][NE*iz + ie] = pow(bet*EdU_i[NE*iz + ie]/q_grid[giq], -1/gam);
-          x_endog_loc[lix][NE*iz + ie] = c_endog_loc[lix][NE*iz + ie] + x_grid[gix]*q_grid[giq] - w_grid[iz]*e_grid[ie];
-	}
-    }
+          x_grid_loc[lx] = x_grid[(NX_LOC-1)*iwg + lx];
+        }
+      */
 
-  barrier(CLK_LOCAL_MEM_FENCE);
+    }
 
   return;
 }
