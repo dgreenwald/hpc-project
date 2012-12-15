@@ -252,6 +252,47 @@ char *read_file(const char *filename)
 }
 
 
+cl_program program_from_string(cl_context ctx, 
+    char const *knl, char const *options)
+{
+  size_t sizes[] = { strlen(knl) };
+
+  cl_int status;
+  cl_program program = clCreateProgramWithSource(ctx, 1, &knl, sizes, &status);
+  CHECK_CL_ERROR(status, "clCreateProgramWithSource");
+
+  status = clBuildProgram(program, 0, NULL, options, NULL, NULL);
+
+  if (status != CL_SUCCESS)
+  {
+    // build failed, get build log.
+
+    cl_device_id dev;
+    CALL_CL_GUARDED(clGetProgramInfo, (program, CL_PROGRAM_DEVICES,
+          sizeof(dev), &dev, NULL));
+
+    size_t log_size;
+    CALL_CL_GUARDED(clGetProgramBuildInfo, (program, dev, CL_PROGRAM_BUILD_LOG,
+          0, NULL, &log_size));
+
+    char *log = malloc(log_size);
+    CHECK_SYS_ERROR(!log, "kernel_from_string: allocate log");
+
+    char devname[100];
+    CALL_CL_GUARDED(clGetDeviceInfo, (dev, CL_DEVICE_NAME,
+          sizeof(devname), devname, NULL));
+
+    CALL_CL_GUARDED(clGetProgramBuildInfo, (program, dev, CL_PROGRAM_BUILD_LOG,
+          log_size, log, NULL));
+    fprintf(stderr, "*** build of '%s' on '%s' failed:\n%s\n*** (end of error)\n",
+        "program", devname, log);
+    abort();
+  }
+  else
+    CHECK_CL_ERROR(status, "clBuildProgram");
+
+  return program;
+}
 
 
 cl_kernel kernel_from_string(cl_context ctx, 

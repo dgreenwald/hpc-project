@@ -68,6 +68,7 @@ void create_context_on(
 char *read_file(const char *filename);
 cl_kernel kernel_from_string(cl_context ctx, 
     char const *knl, char const *knl_name, char const *options);
+cl_program program_from_string(cl_context ctx, char const *knl, char const* options);
 
 #define SET_1_KERNEL_ARG(knl, arg0) \
   CALL_CL_GUARDED(clSetKernelArg, (knl, 0, sizeof(arg0), &arg0));

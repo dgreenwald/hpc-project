@@ -27,11 +27,11 @@ double interp2(global double* const f_all, double b_x, double b_q,
   return f_0 + b_x*(f_1 - f_0);
 }
 
-kernel void solve(global double* c_all, global double* V_all,
-                  global double* V_old, constant double* x_grid,
-                  constant double* q_grid, constant double* w_grid,
-                  constant double* e_grid, constant double* P,
-                  constant double* q_bar, global double* err)
+kernel void solve_iter(global double* c_all, global double* V_all,
+                       global double* V_old, constant double* x_grid,
+                       constant double* q_grid, constant double* w_grid,
+                       constant double* e_grid, constant double* P,
+                       constant double* q_bar, global uint* done)
 {
 
   int gx = get_global_id(0);
@@ -50,14 +50,13 @@ kernel void solve(global double* c_all, global double* V_all,
       int Ngrp_q = get_num_groups(1);
 
       int jx, jq;
-      double x_next, q_next, b_x, b_q, V_next, dU_next, 
-	x_i, c_i, EV_i, V_i, y_i, err_i;
+      double x_next, q_next, b_x, b_q, V_next, dU_next,
+        x_i, c_i, EV_i, V_i, y_i, err_i;
 
       local double EV_loc[NX_LOC][NS];
       local double EdU_loc[NX_LOC][NS];
       local double c_endog_loc[NX_LOC][NS];
       local double x_endog_loc[NX_LOC][NS];
-      local double err_loc;
 
       int2 bnds;
 
@@ -67,26 +66,16 @@ kernel void solve(global double* c_all, global double* V_all,
       EdU_loc[lx][gs] = 0.0;
       c_endog_loc[lx][gs] = 0.0;
       x_endog_loc[lx][gs] = 0.0;
-      err_loc = 0.0;
-
-      // Calculate current step error
-      err_i = fabs(V_all[NS*(NQ*gx + gq) + gs] - V_old[NS*(NQ*gx + gq) + gs]);
-      /*
-      if (grp_x == 0)
-	{
-	  printf("err_i = %g \n", err_i);
-	  printf("updating err_loc, was %g, now %g \n", err_loc, max(err_i, err_loc));
-	}
-      */
-      err_loc = max(err_i, err_loc);
 
       barrier(CLK_LOCAL_MEM_FENCE);
 
-      if (lx == 0 && ls == 0)
-	{
-	  printf("updating err, was %g, now %g \n", err[0], max(err[0], err_loc));
-	  err[0] = max(err[0], err_loc);
-	}
+      // Calculate current step error
+      err_i = fabs(V_all[NS*(NQ*gx + gq) + gs] - V_old[NS*(NQ*gx + gq) + gs]);
+      if (err_i > TOL)
+        done[0] = 0;
+
+      // Update V_old array
+      V_old[NS*(NQ*gx + gq) + gs] = V_all[NS*(NQ*gx + gq) + gs];
 
       // Calculate expectations
       x_next = x_grid[gx];
@@ -107,8 +96,7 @@ kernel void solve(global double* c_all, global double* V_all,
           EdU_loc[lx][is] += P[NS*gs + is]*dU_next;
         }
 
-      if (gx == 0 && gq == 0 && gs == 0)
-        printf("c_endog_loc[lx][gs] = %g \n", c_endog_loc[lx][gs]);
+      barrier(CLK_LOCAL_MEM_FENCE);
 
       c_endog_loc[lx][gs] = pow(BET*EdU_loc[lx][gs]/q_grid[gq], -1/GAM);
       x_endog_loc[lx][gs] = c_endog_loc[lx][gs] + x_grid[gx]*q_grid[gq] - y_i;
@@ -119,11 +107,6 @@ kernel void solve(global double* c_all, global double* V_all,
         {
 
           x_i = x_grid[(NX_LOC-1)*iwg + lx];
-          /*
-            if (gx == 0 && gq == 0 && gs == 0)
-            printf("\n x_i = %g, x_endog_loc[0] = %g, x_endog_loc[NX_LOC-1] = %g \n",
-            x_i, x_endog_loc[0][gs], x_endog_loc[NX_LOC-1][gs]);
-          */
 
           // Boundary case
           if (grp_x == 0 && x_i < x_endog_loc[0][gs])
@@ -133,12 +116,6 @@ kernel void solve(global double* c_all, global double* V_all,
               c_i = y_i + b_x*(c_endog_loc[1][gs] - y_i);
               EV_i = EV_loc[0][gs];
               V_i = pow(c_i, 1-GAM)/(1-GAM) + BET*EV_i;
-
-              /*
-                if (gx == 0 && gq == 0 && gs == 0)
-                printf("\n x_i = %g, c_i = %g, EV_i = %g, V_i = %g \n",
-                x_i, c_i, EV_i, V_i);
-              */
 
               // write to global memory
               c_all[NS*(NQ*gx + gq) + gs] = c_i;
@@ -160,27 +137,13 @@ kernel void solve(global double* c_all, global double* V_all,
               // interpolate to calculate c, EV, then calculate V
               c_i = c_endog_loc[jx][gs] + b_x*(c_endog_loc[jx+1][gs] - c_endog_loc[jx][gs]);
               EV_i = EV_loc[jx][gs] + b_x*(EV_loc[jx+1][gs] - EV_loc[jx][gs]);
-              V_i = pow(c_i, 1-GAM)/(1-GAM) + BET*EV_i;
-
-              /*
-                if (gx == 0 && gq == 0 && gs == 0)
-                printf("\n x_i = %g, c_i = %g, EV_i = %g, V_i = %g \n",
-                x_i, c_i, EV_i, V_i);
-              */
+              // V_i = pow(c_i, 1-GAM)/(1-GAM) + BET*EV_i;
 
               // write to global memory
               c_all[NS*(NQ*gx + gq) + gs] = c_i;
-              V_old[NS*(NQ*gx + gq) + gs] = V_all[NS*(NQ*gx + gq) + gs];
-              V_all[NS*(NQ*gx + gq) + gs] = V_i;
+              V_all[NS*(NQ*gx + gq) + gs] = pow(c_i, 1-GAM)/(1-GAM) + BET*EV_i;
             }
         }
-
-      barrier(CLK_LOCAL_MEM_FENCE);
-      /*
-      if (lx == 0 && gq == 0 && gs == 0)
-        printf("group (%d, %d) of (%d, %d): end of kernel \n",
-               grp_x, grp_q, Ngrp_x, Ngrp_q);
-      */
     }
 
   return;
