@@ -63,7 +63,7 @@ cl_double* getP(double u_b, double u_g, double dur_b, double dur_g, double udur_
 }
 
 // Allocates double buffer
-cl_mem alloc_buf(cl_context ctx, cl_int N, int read, int write)
+cl_mem alloc_buf(cl_context ctx, cl_int N, int read, int write, int type)
 {
   cl_mem_flags flag;
   cl_int status;
@@ -76,27 +76,47 @@ cl_mem alloc_buf(cl_context ctx, cl_int N, int read, int write)
   else
     { perror("bad flags in alloc_buf"); abort(); }
 
-  cl_mem buf = clCreateBuffer(ctx, flag, sizeof(cl_double) * N, 0, &status);
+  long size;
+  if (type == 0)
+    size = N*sizeof(cl_double);
+  else if (type == 1)
+    size = N*sizeof(cl_uint);
+
+  cl_mem buf = clCreateBuffer(ctx, flag, size, 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
   return buf;
 }
 
 // Write to cl_double buffer
-void write_buf(cl_command_queue queue, cl_mem buf, const cl_double *arr, cl_int N)
+void write_buf(cl_command_queue queue, cl_mem buf, const cl_double *arr, cl_int N, int type)
 {
+
+  long size;
+  if (type == 0)
+    size = N*sizeof(cl_double);
+  else if (type == 1)
+    size = N*sizeof(cl_uint);
+
   CALL_CL_GUARDED(clEnqueueWriteBuffer,
                   (queue, buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   N * sizeof(cl_double), arr,
+                   size, arr,
                    0, NULL, NULL));
   return;
 }
 
 // Read from cl_double buffer
-void read_buf(cl_command_queue queue, cl_mem buf, cl_double *arr, cl_int N)
+void read_buf(cl_command_queue queue, cl_mem buf, cl_double *arr, cl_int N, int type)
 {
+
+  long size;
+  if (type == 0)
+    size = N*sizeof(cl_double);
+  else if (type == 1)
+    size = N*sizeof(cl_uint);
+
   CALL_CL_GUARDED(clEnqueueReadBuffer,
                   (queue, buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   N * sizeof(cl_double), arr,
+                   size, arr,
                    0, NULL, NULL));
   return;
 }
@@ -136,12 +156,16 @@ int main(int argc, char **argv)
   const cl_double q_max = pow(1.25, 1/freq);
   const cl_double x_min = -10;
   const cl_double x_max = 100;
-  const cl_int Nx = 2000;
+  const cl_int Nx = 64;
   const cl_int Nx_loc = 64;
-  const cl_int Nq = 10;
+  const cl_int Nx_pad = (Nx-2)/(Nx_loc-1);
+  const cl_int Nx_tot = Nx + Nx_pad;
+  const cl_int Nx_blks = (Nx-1)/Nx_loc + 1;
+  const cl_int Nq = 3;
   const cl_int Nz = 2;
   const cl_int Ne = 2;
   const cl_int Ns = Nz*Ne;
+  const cl_int Npar = 8;
 
   cl_double* x_grid = poly_grid(x_min, x_max, k, Nx);
   cl_double* q_grid = poly_grid(q_min, q_max, 1.0, Nq); // 1.0 for even grid
@@ -187,8 +211,11 @@ int main(int argc, char **argv)
   cl_double *V_old = malloc(sizeof(cl_double) * Nx * Nq * Ns);
   if (!V_old) { perror("alloc V_old"); abort(); }
 
-  cl_double *err = malloc(sizeof(cl_double));
-  if (!err) { perror("alloc err"); abort(); }
+  cl_double* params = malloc(Npar*sizeof(cl_double));
+  if (!params) { perror("alloc params"); abort(); }
+
+  cl_double *done = malloc(sizeof(cl_double));
+  if (!done) { perror("alloc done"); abort(); }
 
   // Initialize Matrices
 
@@ -203,50 +230,59 @@ int main(int argc, char **argv)
             V_old[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = -1e+10;
           }
 
-  err[0] = 0.0;
+  params[0] = bet;
+  params[1] = gam;
+  params[2] = x_min;
+  params[3] = x_max;
+  params[4] = q_min;
+  params[5] = q_max;
+  params[6] = k;
+  params[7] = tol;
+
+  done[0] = 1.0;
 
   /*
-    printf("before kernel \n");
-    for (int ii = 0; ii < 100; ++ii)
+  printf("before kernel \n");
+  for (int ii = 0; ii < Nx*Nq*Ns; ++ii)
     {
-    printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
+      printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
     }
   */
 
   // Allocate device buffers
 
-  cl_mem c_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1);
-  cl_mem V_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1);
-  cl_mem V_old_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1);
-  cl_mem x_buf = alloc_buf(ctx, Nx, 1, 0);
-  cl_mem q_buf = alloc_buf(ctx, Nq, 1, 0);
-  cl_mem w_buf = alloc_buf(ctx, Nz, 1, 0);
-  cl_mem e_buf = alloc_buf(ctx, Ne, 1, 0);
-  cl_mem P_buf = alloc_buf(ctx, Ns*Ns, 1, 0);
-  cl_mem q_bar_buf = alloc_buf(ctx, Nz, 1, 0);
-  cl_mem err_buf = alloc_buf(ctx, 1, 1, 1);
+  cl_mem c_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1, 0);
+  cl_mem V_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1, 0);
+  cl_mem V_old_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1, 0);
+  cl_mem x_buf = alloc_buf(ctx, Nx, 1, 0, 0);
+  cl_mem q_buf = alloc_buf(ctx, Nq, 1, 0, 0);
+  cl_mem w_buf = alloc_buf(ctx, Nz, 1, 0, 0);
+  cl_mem e_buf = alloc_buf(ctx, Ne, 1, 0, 0);
+  cl_mem P_buf = alloc_buf(ctx, Ns*Ns, 1, 0, 0);
+  cl_mem q_bar_buf = alloc_buf(ctx, Nz, 1, 0, 0);
+  cl_mem params_buf = alloc_buf(ctx, Npar, 1, 0, 0);
+  cl_mem done_buf = alloc_buf(ctx, 1, 1, 1, 0);
 
   // Transfer to device
 
-  write_buf(queue, c_buf, c_all, Nx*Nq*Ns);
-  write_buf(queue, V_buf, V_all, Nx*Nq*Ns);
-  write_buf(queue, V_old_buf, V_old, Nx*Nq*Ns);
-  write_buf(queue, x_buf, x_grid, Nx);
-  write_buf(queue, q_buf, q_grid, Nq);
-  write_buf(queue, w_buf, w_grid, Nz);
-  write_buf(queue, e_buf, e_grid, Ne);
-  write_buf(queue, P_buf, P, Ns*Ns);
-  write_buf(queue, q_bar_buf, q_bar, Nz);
-  write_buf(queue, err_buf, err, 1);
+  write_buf(queue, c_buf, c_all, Nx*Nq*Ns, 0);
+  write_buf(queue, V_buf, V_all, Nx*Nq*Ns, 0);
+  write_buf(queue, V_old_buf, V_old, Nx*Nq*Ns, 0);
+  write_buf(queue, x_buf, x_grid, Nx, 0);
+  write_buf(queue, q_buf, q_grid, Nq, 0);
+  write_buf(queue, w_buf, w_grid, Nz, 0);
+  write_buf(queue, e_buf, e_grid, Ne, 0);
+  write_buf(queue, P_buf, P, Ns*Ns, 0);
+  write_buf(queue, q_bar_buf, q_bar, Nz, 0);
+  write_buf(queue, params_buf, params, Npar, 0);
+  write_buf(queue, done_buf, done, 1, 0);
 
   // Run solve.cl on device
 
   knl_text = read_file("solve.cl");
-  char buildOptions[400];
-  sprintf(buildOptions, "-DNX=%u -DNX_LOC=%u -DNQ=%u -DNZ=%u -DNE=%u -DNS=%u"
-          " -DBET=%g -DGAM=%g -DX_MIN=%g -DX_MAX=%g -DQ_MIN=%g -DQ_MAX=%g -DK=%g",
-          Nx, Nx_loc, Nq, Nz, Ne, Ns,
-          bet, gam, x_min, x_max, q_min, q_max, k);
+  char buildOptions[200];
+  sprintf(buildOptions, "-DNX=%u -DNX_LOC=%u -DNX_TOT=%u -DNX_BLKS -DNQ=%u -DNZ=%u -DNE=%u -DNS=%u",
+          Nx, Nx_loc, Nx_tot, Nx_blks, Nq, Nz, Ne, Ns);
   // knl = kernel_from_string(ctx, knl_text, "solve", buildOptions);
   cl_program prg = program_from_string(ctx, knl_text, buildOptions);
   knl = clCreateKernel(prg, "solve_iter", &status);
@@ -257,13 +293,18 @@ int main(int argc, char **argv)
   get_timestamp(&time1);
 
   CALL_CL_GUARDED(clFinish, (queue));
-  SET_10_KERNEL_ARGS(knl, c_buf, V_buf, V_old_buf, x_buf, q_buf, w_buf, e_buf,
-                     P_buf, q_bar_buf, err_buf);
+  SET_11_KERNEL_ARGS(knl, c_buf, V_buf, V_old_buf, x_buf, q_buf, w_buf, e_buf,
+                     P_buf, q_bar_buf, params_buf, done_buf);
 
   size_t ldim[3] = {Nx_loc, 1, Ns};
-  size_t gdim[3] = {ldim[0]*((Nx-1)/(ldim[0]-1) + 1), Nq, Ns};
+  // size_t gdim[3] = {ldim[0]*((Nx-1)/(ldim[0]-1) + 1), Nq, Ns};
+  size_t gdim[3] = {ldim[0]*((Nx_tot-1)/ldim[0] + 1), Nq, Ns};
 
-  printf("error before kernel: %g \n", err[0]);
+  printf("Nx = %d, Nx_tot = %d \n", Nx, Nx_tot);
+  printf("ldim = (%d, %d, %d) \n", ldim[0], ldim[1], ldim[2]);
+  printf("gdim = (%d, %d, %d) \n", gdim[0], gdim[1], gdim[2]);
+
+  printf("error before kernel: %g \n", done[0]);
 
   CALL_CL_GUARDED(clEnqueueNDRangeKernel,
                   (queue, knl, /*dimension*/ 3,
@@ -279,17 +320,19 @@ int main(int argc, char **argv)
 
   // Transfer from device
 
-  read_buf(queue, c_buf, c_all, Nx*Nq*Ns);
-  read_buf(queue, V_buf, V_all, Nx*Nq*Ns);
-  read_buf(queue, err_buf, err, 1);
+  read_buf(queue, c_buf, c_all, Nx*Nq*Ns, 0);
+  read_buf(queue, V_buf, V_all, Nx*Nq*Ns, 0);
+  read_buf(queue, done_buf, done, 1, 0);
 
-  printf("error after kernel: %g \n", err[0]);
+  CALL_CL_GUARDED(clFinish, (queue));
 
   /*
-    printf("after kernel \n");
-    for (int ii = 0; ii < 100; ++ii)
+  printf("error after kernel: %g \n", done[0]);
+
+  printf("after kernel \n");
+  for (int ii = 0; ii < Nx*Nq*Ns; ++ii)
     {
-    printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
+      printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
     }
   */
 
@@ -304,7 +347,7 @@ int main(int argc, char **argv)
   CALL_CL_GUARDED(clReleaseMemObject, (e_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (P_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (q_bar_buf));
-  CALL_CL_GUARDED(clReleaseMemObject, (err_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (done_buf));
   CALL_CL_GUARDED(clReleaseKernel, (knl));
   CALL_CL_GUARDED(clReleaseProgram, (prg));
   CALL_CL_GUARDED(clReleaseCommandQueue, (queue));
@@ -316,7 +359,7 @@ int main(int argc, char **argv)
   free(x_grid);
   free(q_grid);
   free(P);
-  free(err);
+  free(done);
 
   return 0;
 
