@@ -149,16 +149,6 @@ int main(int argc, char **argv)
   const cl_double z_grid[2] = {0.99, 1.01};
   const cl_double e_grid[2] = {0.3, 1.0};
 
-  const cl_int Npar = 7;
-  cl_double params[Npar];
-  params[0] = bet;
-  params[1] = gam;
-  params[2] = x_min;
-  params[3] = x_max;
-  params[4] = q_min;
-  params[5] = q_max;
-  params[6] = k;
-
   const cl_double u_b = 0.1;
   const cl_double u_g = 0.04;
   const cl_double dur_b = 8.0;
@@ -189,10 +179,16 @@ int main(int argc, char **argv)
 
   // Allocate CPU memory
   cl_double *c_all = malloc(sizeof(cl_double) * Nx * Nq * Ns);
-  if (!c_all) { perror("alloc x_endog"); abort(); }
+  if (!c_all) { perror("alloc c_all"); abort(); }
 
   cl_double *V_all = malloc(sizeof(cl_double) * Nx * Nq * Ns);
-  if (!V_all) { perror("alloc c_endog"); abort(); }
+  if (!V_all) { perror("alloc V_all"); abort(); }
+
+  cl_double *V_old = malloc(sizeof(cl_double) * Nx * Nq * Ns);
+  if (!V_old) { perror("alloc V_old"); abort(); }
+
+  cl_double *err = malloc(sizeof(cl_double));
+  if (!err) { perror("alloc err"); abort(); }
 
   // Initialize Matrices
 
@@ -204,13 +200,16 @@ int main(int argc, char **argv)
           {
             c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = x_grid[ix] + w_grid[iz]*e_grid[ie] - x_min; // Zero bond solution
             V_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = pow(c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie], 1-gam)/(1-gam);
+            V_old[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = -1e+10;
           }
 
+  err[0] = 0.0;
+
   /*
-  printf("before kernel \n");
-  for (int ii = 0; ii < 100; ++ii)
+    printf("before kernel \n");
+    for (int ii = 0; ii < 100; ++ii)
     {
-      printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
+    printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
     }
   */
 
@@ -218,49 +217,53 @@ int main(int argc, char **argv)
 
   cl_mem c_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1);
   cl_mem V_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1);
+  cl_mem V_old_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1);
   cl_mem x_buf = alloc_buf(ctx, Nx, 1, 0);
   cl_mem q_buf = alloc_buf(ctx, Nq, 1, 0);
   cl_mem w_buf = alloc_buf(ctx, Nz, 1, 0);
   cl_mem e_buf = alloc_buf(ctx, Ne, 1, 0);
   cl_mem P_buf = alloc_buf(ctx, Ns*Ns, 1, 0);
   cl_mem q_bar_buf = alloc_buf(ctx, Nz, 1, 0);
-  cl_mem params_buf = alloc_buf(ctx, Npar, 1, 0);
+  cl_mem err_buf = alloc_buf(ctx, 1, 1, 1);
 
   // Transfer to device
 
   write_buf(queue, c_buf, c_all, Nx*Nq*Ns);
   write_buf(queue, V_buf, V_all, Nx*Nq*Ns);
+  write_buf(queue, V_old_buf, V_old, Nx*Nq*Ns);
   write_buf(queue, x_buf, x_grid, Nx);
   write_buf(queue, q_buf, q_grid, Nq);
   write_buf(queue, w_buf, w_grid, Nz);
   write_buf(queue, e_buf, e_grid, Ne);
   write_buf(queue, P_buf, P, Ns*Ns);
   write_buf(queue, q_bar_buf, q_bar, Nz);
-  write_buf(queue, params_buf, params, Npar);
+  write_buf(queue, err_buf, err, 1);
 
   // Run solve.cl on device
 
   knl_text = read_file("solve.cl");
-  char buildOptions[100];
-  sprintf(buildOptions, "-DNX=%u -DNX_LOC=%u -DNQ=%u -DNZ=%u -DNE=%u -DNS=%u",
-          Nx, Nx_loc, Nq, Nz, Ne, Ns);
+  char buildOptions[400];
+  sprintf(buildOptions, "-DNX=%u -DNX_LOC=%u -DNQ=%u -DNZ=%u -DNE=%u -DNS=%u"
+	  " -DBET=%g -DGAM=%g -DX_MIN=%g -DX_MAX=%g -DQ_MIN=%g -DQ_MAX=%g -DK=%g",
+          Nx, Nx_loc, Nq, Nz, Ne, Ns,
+	  bet, gam, x_min, x_max, q_min, q_max, k);
   knl = kernel_from_string(ctx, knl_text, "solve", buildOptions);
   free(knl_text);
 
   get_timestamp(&time1);
 
   CALL_CL_GUARDED(clFinish, (queue));
-  SET_9_KERNEL_ARGS(knl, c_buf, V_buf, x_buf, q_buf, w_buf, e_buf, 
-		    P_buf, q_bar_buf, params_buf);
+  SET_10_KERNEL_ARGS(knl, c_buf, V_buf, V_old_buf, x_buf, q_buf, w_buf, e_buf,
+                     P_buf, q_bar_buf, err_buf);
 
   size_t ldim[3] = {Nx_loc, 1, Ns};
   size_t gdim[3] = {ldim[0]*((Nx-1)/(ldim[0]-1) + 1), Nq, Ns};
 
-  printf("gdim[0] = %d\n", gdim[0]);
+  printf("error before kernel: %g \n", err[0]);
 
   CALL_CL_GUARDED(clEnqueueNDRangeKernel,
-		  (queue, knl, /*dimension*/ 3, 
-		   NULL, gdim, ldim, 0, NULL, NULL));
+                  (queue, knl, /*dimension*/ 3,
+                   NULL, gdim, ldim, 0, NULL, NULL));
 
   CALL_CL_GUARDED(clFinish, (queue));
 
@@ -274,12 +277,15 @@ int main(int argc, char **argv)
 
   read_buf(queue, c_buf, c_all, Nx*Nq*Ns);
   read_buf(queue, V_buf, V_all, Nx*Nq*Ns);
+  read_buf(queue, err_buf, err, 1);
+
+  printf("error after kernel: %g \n", err[0]);
 
   /*
-  printf("after kernel \n");
-  for (int ii = 0; ii < 100; ++ii)
+    printf("after kernel \n");
+    for (int ii = 0; ii < 100; ++ii)
     {
-      printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
+    printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
     }
   */
 
@@ -287,21 +293,24 @@ int main(int argc, char **argv)
   CALL_CL_GUARDED(clFinish, (queue));
   CALL_CL_GUARDED(clReleaseMemObject, (c_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (V_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (V_old_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (x_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (q_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (w_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (e_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (P_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (q_bar_buf));
-  CALL_CL_GUARDED(clReleaseMemObject, (params_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (err_buf));
   CALL_CL_GUARDED(clReleaseCommandQueue, (queue));
   CALL_CL_GUARDED(clReleaseContext, (ctx));
 
   free(c_all);
   free(V_all);
+  free(V_old);
   free(x_grid);
   free(q_grid);
   free(P);
+  free(err);
 
   return 0;
 
