@@ -138,10 +138,10 @@ int main(int argc, char **argv)
   const cl_double q_max = pow(1.25, 1/freq);
   const cl_double x_min = -10;
   const cl_double x_max = 100;
-  const cl_int Nx = 8;
-  const cl_int Nx_loc = 8;
-  // const cl_int Nx = 64;
-  // const cl_int Nx_loc = 64;
+  // const cl_int Nx = 8;
+  // const cl_int Nx_loc = 8;
+  const cl_int Nx = 64;
+  const cl_int Nx_loc = 64;
   const cl_int Nx_pad = (Nx-2)/(Nx_loc-1);
   const cl_int Nx_tot = Nx + Nx_pad;
   const cl_int Nx_blks = (Nx-1)/Nx_loc + 1;
@@ -200,8 +200,11 @@ int main(int argc, char **argv)
   cl_double* params = malloc(Npar*sizeof(cl_double));
   if (!params) { perror("alloc params"); abort(); }
 
-  cl_double *done = malloc(sizeof(cl_double));
-  if (!done) { perror("alloc done"); abort(); }
+  cl_double *done_start = malloc(sizeof(cl_double));
+  if (!done_start) { perror("alloc done_start"); abort(); }
+
+  cl_double *done_end = malloc(sizeof(cl_double));
+  if (!done_end) { perror("alloc done_end"); abort(); }
 
   // Initialize Matrices
 
@@ -231,7 +234,8 @@ int main(int argc, char **argv)
   params[6] = k;
   params[7] = tol;
 
-  done[0] = 1.0;
+  done_start[0] = 1.0;
+  done_end[0] = 0.0;
 
   /*
     printf("before kernel \n");
@@ -265,7 +269,6 @@ int main(int argc, char **argv)
   write_buf(queue, P_buf, P, Ns*Ns);
   write_buf(queue, q_bar_buf, q_bar, Nz);
   write_buf(queue, params_buf, params, Npar);
-  write_buf(queue, done_buf, done, 1);
 
   CALL_CL_GUARDED(clFinish, (queue));
 
@@ -283,8 +286,6 @@ int main(int argc, char **argv)
   free(knl_text);
 
   get_timestamp(&time1);
-
-  CALL_CL_GUARDED(clFinish, (queue));
 
   // Add global arguments
   int n_arg = 10;
@@ -305,28 +306,35 @@ int main(int argc, char **argv)
   printf("ldim = (%d, %d, %d) \n", ldim[0], ldim[1], ldim[2]);
   printf("gdim = (%d, %d, %d) \n", gdim[0], gdim[1], gdim[2]);
 
-  printf("error before kernel: %g \n", done[0]);
+  int iter = 0;
+  while (done_end[0] < 0.5)
+    {
+      ++iter;
+      write_buf(queue, done_buf, done_start, 1);
 
-  CALL_CL_GUARDED(clEnqueueNDRangeKernel,
-                  (queue, knl, /*dimension*/ 3,
-                   NULL, gdim, ldim, 0, NULL, NULL));
+      CALL_CL_GUARDED(clFinish, (queue));
 
-  CALL_CL_GUARDED(clFinish, (queue));
+      CALL_CL_GUARDED(clEnqueueNDRangeKernel,
+                      (queue, knl, /*dimension*/ 3,
+                       NULL, gdim, ldim, 0, NULL, NULL));
+
+      CALL_CL_GUARDED(clFinish, (queue));
+
+      // Transfer from device
+      read_buf(queue, done_buf, done_end, 1);
+    }
 
   clReleaseKernel(knl); // Release kernel
 
   get_timestamp(&time2);
   elapsed = timestamp_diff_in_seconds(time1,time2);
   printf("Time elapsed: %f s\n", elapsed);
+  printf("%d iterations to convergence \n", iter);
 
-  // Transfer from device
   read_buf(queue, c_buf, c_all, Nx*Nq*Ns);
   read_buf(queue, V_buf, V_all, Nx*Nq*Ns);
-  read_buf(queue, done_buf, done, 1);
 
   CALL_CL_GUARDED(clFinish, (queue));
-
-  printf("error after kernel: %g \n", done[0]);
 
   printf("after kernel \n");
   for (int ix = 0; ix < Nx; ++ix)
@@ -346,7 +354,6 @@ int main(int argc, char **argv)
   CALL_CL_GUARDED(clReleaseMemObject, (P_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (q_bar_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (done_buf));
-  CALL_CL_GUARDED(clReleaseKernel, (knl));
   CALL_CL_GUARDED(clReleaseProgram, (prg));
   CALL_CL_GUARDED(clReleaseCommandQueue, (queue));
   CALL_CL_GUARDED(clReleaseContext, (ctx));
@@ -359,7 +366,8 @@ int main(int argc, char **argv)
   free(y_grid);
   free(q_bar);
   free(P);
-  free(done);
+  free(done_start);
+  free(done_end);
 
   return 0;
 

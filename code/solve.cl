@@ -68,9 +68,11 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 
   barrier(CLK_LOCAL_MEM_FENCE);
 
+  /*
   if (gx == 0 && gq == 0 && gs == 0)
     printf("NX = %d, NX_LOC = %d, NX_TOT = %d, NX_BLKS = %d, NQ = %d, NZ = %d, NE = %d, NS = %d \n",
            NX, NX_LOC, NX_TOT, NX_BLKS, NQ, NZ, NE, NS);
+  */
 
   /*
     printf("(%d, %d, %d): c = %g, V = %g \n",
@@ -110,8 +112,10 @@ kernel void solve_iter(global double* c_all, global double* V_all,
       c_i = interp2(c_all, b_x, b_q, jx, jq, gs);
       dU_next_loc[NS*lx + gs] = pow(interp2(c_all, b_x, b_q, jx, jq, gs), -gam);
 
+      /*
       printf("(%d, %d, %d): V_next_loc = %g, dU_next_loc = %g, c = %g \n",
              gx, gq, gs, V_next_loc[NS*lx + gs], dU_next_loc[NS*lx + gs], c_i);
+      */
 
     }
 
@@ -214,9 +218,6 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   if (lx == 0 && gs == 0)
     if (done_loc < 0.5)
       done[0] = 0;
-
-  if (gx == 0 && gq == 0 && gs == 0)
-    printf("done = %g \n", done[0]);
 
   return;
 }
