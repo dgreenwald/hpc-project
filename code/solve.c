@@ -99,11 +99,7 @@ void write_buf(cl_command_queue queue, cl_mem buf, const cl_double *arr, cl_int 
 
   CALL_CL_GUARDED(clEnqueueWriteBuffer,
                   (queue, buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-<<<<<<< HEAD
-                   N, arr,
-=======
                    size, arr,
->>>>>>> redo
                    0, NULL, NULL));
   return;
 }
@@ -220,7 +216,7 @@ int main(int argc, char **argv)
   cl_double* params = malloc(Npar*sizeof(cl_double));
   if (!params) { perror("alloc params"); abort(); }
 
-  cl_double *done = malloc(sizeof(cl_double));
+  cl_uint *done = malloc(sizeof(cl_uint));
   if (!done) { perror("alloc done"); abort(); }
 
   // Initialize Matrices
