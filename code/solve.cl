@@ -27,7 +27,7 @@ double interp2(global double* const f_all, double b_x, double b_q,
   return f_0 + b_x*(f_1 - f_0);
 }
 
-kernel void solve(global double* c_all, global double* V_all,
+kernel void solve_iter(global double* c_all, global double* V_all,
                   global double* V_old, constant double* x_grid,
                   constant double* q_grid, constant double* w_grid,
                   constant double* e_grid, constant double* P,

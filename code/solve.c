@@ -244,10 +244,14 @@ int main(int argc, char **argv)
   knl_text = read_file("solve.cl");
   char buildOptions[400];
   sprintf(buildOptions, "-DNX=%u -DNX_LOC=%u -DNQ=%u -DNZ=%u -DNE=%u -DNS=%u"
-	  " -DBET=%g -DGAM=%g -DX_MIN=%g -DX_MAX=%g -DQ_MIN=%g -DQ_MAX=%g -DK=%g",
+          " -DBET=%g -DGAM=%g -DX_MIN=%g -DX_MAX=%g -DQ_MIN=%g -DQ_MAX=%g -DK=%g",
           Nx, Nx_loc, Nq, Nz, Ne, Ns,
-	  bet, gam, x_min, x_max, q_min, q_max, k);
-  knl = kernel_from_string(ctx, knl_text, "solve", buildOptions);
+          bet, gam, x_min, x_max, q_min, q_max, k);
+  // knl = kernel_from_string(ctx, knl_text, "solve", buildOptions);
+  cl_program prg = program_from_string(ctx, knl_text, buildOptions);
+  knl = clCreateKernel(prg, "solve_iter", &status);
+  CHECK_CL_ERROR(status, "clCreateKernel");
+
   free(knl_text);
 
   get_timestamp(&time1);
@@ -301,6 +305,8 @@ int main(int argc, char **argv)
   CALL_CL_GUARDED(clReleaseMemObject, (P_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (q_bar_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (err_buf));
+  CALL_CL_GUARDED(clReleaseKernel, (knl));
+  CALL_CL_GUARDED(clReleaseProgram, (prg));
   CALL_CL_GUARDED(clReleaseCommandQueue, (queue));
   CALL_CL_GUARDED(clReleaseContext, (ctx));
 
