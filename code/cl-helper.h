@@ -187,4 +187,10 @@ cl_program program_from_string(cl_context ctx, char const *knl, char const* opti
   CALL_CL_GUARDED(clSetKernelArg, (knl, 11, sizeof(arg11), &arg11)); \
   CALL_CL_GUARDED(clSetKernelArg, (knl, 12, sizeof(arg12), &arg12)); 
 
+#define SET_ARG(knl, num, arg) \
+  CALL_CL_GUARDED(clSetKernelArg, (knl, num, sizeof(arg), &arg));
+
+#define SET_LOCAL_ARG(knl, num, size)			\
+  CALL_CL_GUARDED(clSetKernelArg, (knl, num, size, NULL));
+
 #endif

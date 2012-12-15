@@ -156,8 +156,10 @@ int main(int argc, char **argv)
   const cl_double q_max = pow(1.25, 1/freq);
   const cl_double x_min = -10;
   const cl_double x_max = 100;
-  const cl_int Nx = 64;
-  const cl_int Nx_loc = 64;
+  const cl_int Nx = 8;
+  const cl_int Nx_loc = 8;
+  // const cl_int Nx = 64;
+  // const cl_int Nx_loc = 64;
   const cl_int Nx_pad = (Nx-2)/(Nx_loc-1);
   const cl_int Nx_tot = Nx + Nx_pad;
   const cl_int Nx_blks = (Nx-1)/Nx_loc + 1;
@@ -219,7 +221,6 @@ int main(int argc, char **argv)
 
   // Initialize Matrices
 
-  int it = 0;
   for (int ix = 0; ix < Nx; ++ix)
     for (int iq = 0; iq < Nq; ++iq)
       for (int iz = 0; iz < Nz; ++iz)
@@ -277,11 +278,13 @@ int main(int argc, char **argv)
   write_buf(queue, params_buf, params, Npar, 0);
   write_buf(queue, done_buf, done, 1, 0);
 
+  CALL_CL_GUARDED(clFinish, (queue));  
+
   // Run solve.cl on device
 
   knl_text = read_file("solve.cl");
   char buildOptions[200];
-  sprintf(buildOptions, "-DNX=%u -DNX_LOC=%u -DNX_TOT=%u -DNX_BLKS -DNQ=%u -DNZ=%u -DNE=%u -DNS=%u",
+  sprintf(buildOptions, "-DNX=%d -DNX_LOC=%d -DNX_TOT=%d -DNX_BLKS=%d -DNQ=%d -DNZ=%d -DNE=%d -DNS=%d",
           Nx, Nx_loc, Nx_tot, Nx_blks, Nq, Nz, Ne, Ns);
   // knl = kernel_from_string(ctx, knl_text, "solve", buildOptions);
   cl_program prg = program_from_string(ctx, knl_text, buildOptions);
@@ -293,8 +296,17 @@ int main(int argc, char **argv)
   get_timestamp(&time1);
 
   CALL_CL_GUARDED(clFinish, (queue));
+
+  // Add global arguments
+  int n_arg = 11;
+  int n_loc = 6;
   SET_11_KERNEL_ARGS(knl, c_buf, V_buf, V_old_buf, x_buf, q_buf, w_buf, e_buf,
                      P_buf, q_bar_buf, params_buf, done_buf);
+  // Add local arguments
+  for (int ii = n_arg; ii < n_arg + n_loc; ++ii)
+    {
+      SET_LOCAL_ARG(knl, ii, Nx_loc*Ns*sizeof(cl_double));
+    }
 
   size_t ldim[3] = {Nx_loc, 1, Ns};
   // size_t gdim[3] = {ldim[0]*((Nx-1)/(ldim[0]-1) + 1), Nq, Ns};

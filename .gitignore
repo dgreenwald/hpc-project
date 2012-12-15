@@ -10,9 +10,14 @@ _*
 *.dvi
 *.pdf
 *.mat
+*.o
+*.old
+solve
+print-devices
 data/
 code/old/
 output/
 save/
 tex/auto/
 lib/
+compecon/
