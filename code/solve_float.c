@@ -4,26 +4,26 @@
 #include <stdio.h>
 #include <math.h>
 
-cl_double* poly_grid(cl_double f_min, cl_double f_max, cl_double k, cl_long N)
+cl_float* poly_grid(cl_float f_min, cl_float f_max, cl_float k, cl_long N)
 {
-  cl_double *f = malloc(sizeof(cl_double)*N);
+  cl_float *f = malloc(sizeof(cl_float)*N);
   if (!f) { perror("alloc error in poly_grid"); abort(); }
 
   for (int ii = 0; ii < N; ++ii)
     {
-      f[ii] = f_min + (f_max - f_min) * pow(((double) ii)/((double) (N-1)), 1/k);
+      f[ii] = f_min + (f_max - f_min) * pow(((float) ii)/((float) (N-1)), 1/k);
     }
   return f;
 }
 
-cl_double* getP(double u_b, double u_g, double dur_b, double dur_g, double udur_b, double udur_g,
-                double rat_bg, double rat_gb)
+cl_float* getP(float u_b, float u_g, float dur_b, float dur_g, float udur_b, float udur_g,
+               float rat_bg, float rat_gb)
 {
-  cl_double *P = malloc(sizeof(cl_double)*16);
+  cl_float *P = malloc(sizeof(cl_float)*16);
   if (!P) { perror("alloc error in getP"); abort(); }
 
-  const cl_double pbb = 1 - 1/dur_b;
-  const cl_double pgg = 1 - 1/dur_g;
+  const cl_float pbb = 1 - 1/dur_b;
+  const cl_float pgg = 1 - 1/dur_g;
 
   P[4*1 + 0] = pbb/udur_b;
   P[4*3 + 2] = pgg/udur_g;
@@ -46,7 +46,7 @@ cl_double* getP(double u_b, double u_g, double dur_b, double dur_g, double udur_
   P[4*3 + 3] = pgg - P[4*2 + 3];
 
   // Check matrix
-  cl_double Psum;
+  cl_float Psum;
   for (int ii = 0; ii < 4; ++ii)
     {
       Psum = 0;
@@ -62,7 +62,7 @@ cl_double* getP(double u_b, double u_g, double dur_b, double dur_g, double udur_
 
 }
 
-// Allocates double buffer
+// Allocates float buffer
 cl_mem alloc_buf(cl_context ctx, cl_int N, int read, int write)
 {
   cl_mem_flags flag;
@@ -76,29 +76,29 @@ cl_mem alloc_buf(cl_context ctx, cl_int N, int read, int write)
   else
     { perror("bad flags in alloc_buf"); abort(); }
 
-  cl_mem buf = clCreateBuffer(ctx, flag, N*sizeof(cl_double), 0, &status);
+  cl_mem buf = clCreateBuffer(ctx, flag, N*sizeof(cl_float), 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
   return buf;
 }
 
 // Write to buffer
-void write_buf(cl_command_queue queue, cl_mem buf, const cl_double *arr, cl_int N)
+void write_buf(cl_command_queue queue, cl_mem buf, const cl_float *arr, cl_int N)
 {
 
   CALL_CL_GUARDED(clEnqueueWriteBuffer,
                   (queue, buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   N*sizeof(cl_double), arr,
+                   N*sizeof(cl_float), arr,
                    0, NULL, NULL));
   return;
 }
 
 // Read from buffer
-void read_buf(cl_command_queue queue, cl_mem buf, cl_double *arr, cl_int N)
+void read_buf(cl_command_queue queue, cl_mem buf, cl_float *arr, cl_int N)
 {
 
   CALL_CL_GUARDED(clEnqueueReadBuffer,
                   (queue, buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   N*sizeof(cl_double), arr,
+                   N*sizeof(cl_float), arr,
                    0, NULL, NULL));
   return;
 }
@@ -109,7 +109,7 @@ int main(int argc, char **argv)
   // Timing Setup
 
   timestamp_type time1, time2;
-  double elapsed;
+  float elapsed;
 
   // OpenCL Setup
 
@@ -122,22 +122,22 @@ int main(int argc, char **argv)
   char* knl_text;
   cl_kernel knl;
 
-  // create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
+  create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
   // create_context_on("Intel", NULL, 0, &ctx, &queue, 0);
-  create_context_on("Advanced", NULL, 0, &ctx, &queue, 0);
+  // create_context_on("Advanced", NULL, 0, &ctx, &queue, 0);
 
   // Define parameters
 
-  const cl_double freq = 4;
-  const cl_double tol = 1e-6;
-  const cl_double k = 0.4;
-  const cl_double alp = 0.36;
-  const cl_double gam = 2.0;
-  const cl_double bet = pow(0.95, 1/freq);
-  const cl_double q_min = pow(0.8, 1/freq);
-  const cl_double q_max = pow(1.25, 1/freq);
-  const cl_double x_min = -10;
-  const cl_double x_max = 100;
+  const cl_float freq = 4;
+  const cl_float tol = 1e-6;
+  const cl_float k = 0.4;
+  const cl_float alp = 0.36;
+  const cl_float gam = 2.0;
+  const cl_float bet = pow(0.95, 1/freq);
+  const cl_float q_min = pow(0.8, 1/freq);
+  const cl_float q_max = pow(1.25, 1/freq);
+  const cl_float x_min = -10;
+  const cl_float x_max = 100;
   const cl_int Nx = 32;
   const cl_int Nx_loc = 32;
   // const cl_int Nx = 64;
@@ -151,22 +151,22 @@ int main(int argc, char **argv)
   const cl_int Ns = Nz*Ne;
   const cl_int Npar = 8;
 
-  cl_double* x_grid = poly_grid(x_min, x_max, k, Nx);
-  cl_double* q_grid = poly_grid(q_min, q_max, 1.0, Nq); // 1.0 for even grid
+  cl_float* x_grid = poly_grid(x_min, x_max, k, Nx);
+  cl_float* q_grid = poly_grid(q_min, q_max, 1.0, Nq); // 1.0 for even grid
 
-  const cl_double z_grid[2] = {0.99, 1.01};
-  const cl_double e_grid[2] = {0.3, 1.0};
+  const cl_float z_grid[2] = {0.99, 1.01};
+  const cl_float e_grid[2] = {0.3, 1.0};
 
-  const cl_double u_b = 0.1;
-  const cl_double u_g = 0.04;
-  const cl_double dur_b = 8.0;
-  const cl_double dur_g = 8.0;
-  const cl_double udur_b = 2.5;
-  const cl_double udur_g = 1.5;
-  const cl_double rat_bg = 0.75;
-  const cl_double rat_gb = 1.25;
+  const cl_float u_b = 0.1;
+  const cl_float u_g = 0.04;
+  const cl_float dur_b = 8.0;
+  const cl_float dur_g = 8.0;
+  const cl_float udur_b = 2.5;
+  const cl_float udur_g = 1.5;
+  const cl_float rat_bg = 0.75;
+  const cl_float rat_gb = 1.25;
 
-  cl_double *P = getP(u_b, u_g, dur_b, dur_g, udur_b, udur_g, rat_bg, rat_gb);
+  cl_float *P = getP(u_b, u_g, dur_b, dur_g, udur_b, udur_g, rat_bg, rat_gb);
 
   /* // Outputting P matrix
      for (int ii = 0; ii < Ns; ++ii)
@@ -177,33 +177,33 @@ int main(int argc, char **argv)
      }
   */
 
-  cl_double w_grid[2];
+  cl_float w_grid[2];
   w_grid[0] = z_grid[0]*pow(1 - u_b, alp);
   w_grid[1] = z_grid[1]*pow(1 - u_g, alp);
 
   // Allocate CPU memory
-  cl_double *c_all = malloc(sizeof(cl_double) * Nx * Nq * Ns);
+  cl_float *c_all = malloc(sizeof(cl_float) * Nx * Nq * Ns);
   if (!c_all) { perror("alloc c_all"); abort(); }
 
-  cl_double *V_all = malloc(sizeof(cl_double) * Nx * Nq * Ns);
+  cl_float *V_all = malloc(sizeof(cl_float) * Nx * Nq * Ns);
   if (!V_all) { perror("alloc V_all"); abort(); }
 
-  cl_double *V_old = malloc(sizeof(cl_double) * Nx * Nq * Ns);
+  cl_float *V_old = malloc(sizeof(cl_float) * Nx * Nq * Ns);
   if (!V_old) { perror("alloc V_old"); abort(); }
 
-  cl_double *y_grid = malloc(sizeof(cl_double) * Ns);
+  cl_float *y_grid = malloc(sizeof(cl_float) * Ns);
   if (!y_grid) { perror("alloc y_grid"); abort(); }
 
-  cl_double *q_bar = malloc(sizeof(cl_double) * Ns);
+  cl_float *q_bar = malloc(sizeof(cl_float) * Ns);
   if (!q_bar) { perror("alloc q_bar"); abort(); }
 
-  cl_double* params = malloc(Npar*sizeof(cl_double));
+  cl_float* params = malloc(Npar*sizeof(cl_float));
   if (!params) { perror("alloc params"); abort(); }
 
-  cl_double *done_start = malloc(sizeof(cl_double));
+  cl_float *done_start = malloc(sizeof(cl_float));
   if (!done_start) { perror("alloc done_start"); abort(); }
 
-  cl_double *done_end = malloc(sizeof(cl_double));
+  cl_float *done_end = malloc(sizeof(cl_float));
   if (!done_end) { perror("alloc done_end"); abort(); }
 
   // Initialize Matrices
@@ -274,7 +274,7 @@ int main(int argc, char **argv)
 
   // Run solve.cl on device
 
-  knl_text = read_file("solve.cl");
+  knl_text = read_file("solve_float.cl");
   char buildOptions[200];
   sprintf(buildOptions, "-DNX=%d -DNX_LOC=%d -DNX_TOT=%d -DNX_BLKS=%d -DNQ=%d -DNZ=%d -DNE=%d -DNS=%d",
           Nx, Nx_loc, Nx_tot, Nx_blks, Nq, Nz, Ne, Ns);
@@ -295,7 +295,7 @@ int main(int argc, char **argv)
   // Add local arguments
   for (int ii = n_arg; ii < n_arg + n_loc; ++ii)
     {
-      SET_LOCAL_ARG(knl, ii, Nx_loc*Ns*sizeof(cl_double));
+      SET_LOCAL_ARG(knl, ii, Nx_loc*Ns*sizeof(cl_float));
     }
 
   size_t ldim[3] = {Nx_loc, 1, Ns};
@@ -343,7 +343,7 @@ int main(int argc, char **argv)
       for (int is = 0; is < Ns; ++is)
         printf("(%d, %d, %d): c = %g, V = %g, V_old = %g \n",
                ix, iq, is, c_all[Ns*(Nq*ix + iq) + is], V_all[Ns*(Nq*ix + iq) + is],
-               V_old[Ns*(Nq*ix + iq) + is]);
+	        V_old[Ns*(Nq*ix + iq) + is]);
 
   // Clean up
   CALL_CL_GUARDED(clFinish, (queue));

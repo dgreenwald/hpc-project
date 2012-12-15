@@ -1,7 +1,5 @@
-#pragma OPENCL EXTENSION cl_khr_fp64: enable
-
 // bisection lookup algorithm
-int2 bisect(local double* grid, double newval, int2 bnds, int gs)
+int2 bisect(local float* grid, float newval, int2 bnds, int gs)
 {
   int mid = (bnds.s0 + bnds.s1)/2;
   if (grid[NS*mid + gs] <= newval)
@@ -11,10 +9,10 @@ int2 bisect(local double* grid, double newval, int2 bnds, int gs)
 }
 
 // No-lookup bilinear interpolation (indices are known, coefficients pre-calculated)
-double interp2(global double* const f_all, double b_x, double b_q,
+float interp2(global float* const f_all, float b_x, float b_q,
                int jx, int jq, int js)
 {
-  double f_0a, f_0b, f_1a, f_1b, f_0, f_1;
+  float f_0a, f_0b, f_1a, f_1b, f_0, f_1;
 
   f_0a = f_all[NS*(NQ*jx + jq) + js];
   f_0b = f_all[NS*(NQ*jx + (jq+1)) + js];
@@ -27,14 +25,14 @@ double interp2(global double* const f_all, double b_x, double b_q,
   return (f_0 + b_x*(f_1 - f_0));
 }
 
-kernel void solve_iter(global double* c_all, global double* V_all,
-                       global double* V_old, constant double* x_grid,
-                       constant double* q_grid, constant double* y_grid,
-                       constant double* P, constant double* q_bar, 
-		       constant double* params,  global double* done,
-                       local double* V_next_loc, local double* dU_next_loc,
-                       local double* EV_loc, local double* EdU_loc,
-                       local double* x_endog_loc, local double* c_endog_loc)
+kernel void solve_iter(global float* c_all, global float* V_all,
+                       global float* V_old, constant float* x_grid,
+                       constant float* q_grid, constant float* y_grid,
+                       constant float* P, constant float* q_bar, 
+		       constant float* params,  global float* done,
+                       local float* V_next_loc, local float* dU_next_loc,
+                       local float* EV_loc, local float* EdU_loc,
+                       local float* x_endog_loc, local float* c_endog_loc)
 {
 
   int gx = get_global_id(0);
@@ -44,23 +42,23 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 
   int ix, jx, jq;
   int written = 0;
-  double x_next, q_next, b_x, b_q, dU_next,
+  float x_next, q_next, b_x, b_q, dU_next,
     x_i, c_i, EV_i, V_i, EdU_i, y_i, err_i;
 
   int2 bnds;
 
   // Unpack parameters
 
-  double bet = params[0];
-  double gam = params[1];
-  double x_min = params[2];
-  double x_max = params[3];
-  double q_min = params[4];
-  double q_max = params[5];
-  double kk = params[6];
-  double tol = params[7];
+  float bet = params[0];
+  float gam = params[1];
+  float x_min = params[2];
+  float x_max = params[3];
+  float q_min = params[4];
+  float q_max = params[5];
+  float kk = params[6];
+  float tol = params[7];
 
-  local double done_loc;
+  local float done_loc;
   if (lx == 0 && gs == 0)
     done_loc = 1;
 

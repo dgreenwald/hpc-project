@@ -1,7 +1,7 @@
 *.crunch*
 \#*
 _*
-*.*~
+*~
 *.aux
 *.bbl
 *.blg
@@ -13,6 +13,7 @@ _*
 *.o
 *.old
 solve
+solve_float
 print-devices
 data/
 code/old/
