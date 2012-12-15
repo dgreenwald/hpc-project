@@ -63,7 +63,7 @@ cl_double* getP(double u_b, double u_g, double dur_b, double dur_g, double udur_
 }
 
 // Allocates double buffer
-cl_mem alloc_buf(cl_context ctx, cl_int N, int read, int write, int type)
+cl_mem alloc_buf(cl_context ctx, cl_int N, int read, int write)
 {
   cl_mem_flags flag;
   cl_int status;
@@ -76,47 +76,29 @@ cl_mem alloc_buf(cl_context ctx, cl_int N, int read, int write, int type)
   else
     { perror("bad flags in alloc_buf"); abort(); }
 
-  long size;
-  if (type == 0)
-    size = N*sizeof(cl_double);
-  else if (type == 1)
-    size = N*sizeof(cl_uint);
-
-  cl_mem buf = clCreateBuffer(ctx, flag, size, 0, &status);
+  cl_mem buf = clCreateBuffer(ctx, flag, N*sizeof(cl_double), 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
   return buf;
 }
 
 // Write to buffer
-void write_buf(cl_command_queue queue, cl_mem buf, const cl_double *arr, cl_int N, int type)
+void write_buf(cl_command_queue queue, cl_mem buf, const cl_double *arr, cl_int N)
 {
-
-  long size;
-  if (type == 0)
-    size = N*sizeof(cl_double);
-  else if (type == 1)
-    size = N*sizeof(cl_uint);
 
   CALL_CL_GUARDED(clEnqueueWriteBuffer,
                   (queue, buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   size, arr,
+                   N*sizeof(cl_double), arr,
                    0, NULL, NULL));
   return;
 }
 
 // Read from buffer
-void read_buf(cl_command_queue queue, cl_mem buf, cl_double *arr, cl_int N, int type)
+void read_buf(cl_command_queue queue, cl_mem buf, cl_double *arr, cl_int N)
 {
-
-  long size;
-  if (type == 0)
-    size = N*sizeof(cl_double);
-  else if (type == 1)
-    size = N*sizeof(cl_uint);
 
   CALL_CL_GUARDED(clEnqueueReadBuffer,
                   (queue, buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
-                   size, arr,
+                   N*sizeof(cl_double), arr,
                    0, NULL, NULL));
   return;
 }
@@ -199,10 +181,6 @@ int main(int argc, char **argv)
   w_grid[0] = z_grid[0]*pow(1 - u_b, alp);
   w_grid[1] = z_grid[1]*pow(1 - u_g, alp);
 
-  cl_double q_bar[2];
-  q_bar[0] = 1/z_grid[0];
-  q_bar[1] = 1/z_grid[1];
-
   // Allocate CPU memory
   cl_double *c_all = malloc(sizeof(cl_double) * Nx * Nq * Ns);
   if (!c_all) { perror("alloc c_all"); abort(); }
@@ -213,10 +191,16 @@ int main(int argc, char **argv)
   cl_double *V_old = malloc(sizeof(cl_double) * Nx * Nq * Ns);
   if (!V_old) { perror("alloc V_old"); abort(); }
 
+  cl_double *y_grid = malloc(sizeof(cl_double) * Ns);
+  if (!y_grid) { perror("alloc y_grid"); abort(); }
+
+  cl_double *q_bar = malloc(sizeof(cl_double) * Ns);
+  if (!q_bar) { perror("alloc q_bar"); abort(); }
+
   cl_double* params = malloc(Npar*sizeof(cl_double));
   if (!params) { perror("alloc params"); abort(); }
 
-  cl_uint *done = malloc(sizeof(cl_uint));
+  cl_double *done = malloc(sizeof(cl_double));
   if (!done) { perror("alloc done"); abort(); }
 
   // Initialize Matrices
@@ -231,6 +215,13 @@ int main(int argc, char **argv)
             V_old[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = -1e+10;
           }
 
+  q_bar[0] = 1/z_grid[0];
+  q_bar[1] = 1/z_grid[1];
+
+  for (int iz = 0; iz < Nz; ++iz)
+    for (int ie = 0; ie < Ne; ++ie)
+      y_grid[Ne*iz + ie] = w_grid[iz]*e_grid[ie];
+
   params[0] = bet;
   params[1] = gam;
   params[2] = x_min;
@@ -243,42 +234,40 @@ int main(int argc, char **argv)
   done[0] = 1.0;
 
   /*
-  printf("before kernel \n");
-  for (int ii = 0; ii < Nx*Nq*Ns; ++ii)
+    printf("before kernel \n");
+    for (int ii = 0; ii < Nx*Nq*Ns; ++ii)
     {
-      printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
+    printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
     }
   */
 
   // Allocate device buffers
 
-  cl_mem c_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1, 0);
-  cl_mem V_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1, 0);
-  cl_mem V_old_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1, 0);
-  cl_mem x_buf = alloc_buf(ctx, Nx, 1, 0, 0);
-  cl_mem q_buf = alloc_buf(ctx, Nq, 1, 0, 0);
-  cl_mem w_buf = alloc_buf(ctx, Nz, 1, 0, 0);
-  cl_mem e_buf = alloc_buf(ctx, Ne, 1, 0, 0);
-  cl_mem P_buf = alloc_buf(ctx, Ns*Ns, 1, 0, 0);
-  cl_mem q_bar_buf = alloc_buf(ctx, Nz, 1, 0, 0);
-  cl_mem params_buf = alloc_buf(ctx, Npar, 1, 0, 0);
-  cl_mem done_buf = alloc_buf(ctx, 1, 1, 1, 0);
+  cl_mem c_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1);
+  cl_mem V_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1);
+  cl_mem V_old_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1);
+  cl_mem x_buf = alloc_buf(ctx, Nx, 1, 0);
+  cl_mem q_buf = alloc_buf(ctx, Nq, 1, 0);
+  cl_mem y_buf = alloc_buf(ctx, Ns, 1, 0);
+  cl_mem P_buf = alloc_buf(ctx, Ns*Ns, 1, 0);
+  cl_mem q_bar_buf = alloc_buf(ctx, Nz, 1, 0);
+  cl_mem params_buf = alloc_buf(ctx, Npar, 1, 0);
+  cl_mem done_buf = alloc_buf(ctx, 1, 1, 1);
 
   // Transfer to device
 
-  write_buf(queue, c_buf, c_all, Nx*Nq*Ns, 0);
-  write_buf(queue, V_buf, V_all, Nx*Nq*Ns, 0);
-  write_buf(queue, V_old_buf, V_old, Nx*Nq*Ns, 0);
-  write_buf(queue, x_buf, x_grid, Nx, 0);
-  write_buf(queue, q_buf, q_grid, Nq, 0);
-  write_buf(queue, w_buf, w_grid, Nz, 0);
-  write_buf(queue, e_buf, e_grid, Ne, 0);
-  write_buf(queue, P_buf, P, Ns*Ns, 0);
-  write_buf(queue, q_bar_buf, q_bar, Nz, 0);
-  write_buf(queue, params_buf, params, Npar, 0);
-  write_buf(queue, done_buf, done, 1, 0);
+  write_buf(queue, c_buf, c_all, Nx*Nq*Ns);
+  write_buf(queue, V_buf, V_all, Nx*Nq*Ns);
+  write_buf(queue, V_old_buf, V_old, Nx*Nq*Ns);
+  write_buf(queue, x_buf, x_grid, Nx);
+  write_buf(queue, q_buf, q_grid, Nq);
+  write_buf(queue, y_buf, y_grid, Ns);
+  write_buf(queue, P_buf, P, Ns*Ns);
+  write_buf(queue, q_bar_buf, q_bar, Nz);
+  write_buf(queue, params_buf, params, Npar);
+  write_buf(queue, done_buf, done, 1);
 
-  CALL_CL_GUARDED(clFinish, (queue));  
+  CALL_CL_GUARDED(clFinish, (queue));
 
   // Run solve.cl on device
 
@@ -298,9 +287,9 @@ int main(int argc, char **argv)
   CALL_CL_GUARDED(clFinish, (queue));
 
   // Add global arguments
-  int n_arg = 11;
+  int n_arg = 10;
   int n_loc = 6;
-  SET_11_KERNEL_ARGS(knl, c_buf, V_buf, V_old_buf, x_buf, q_buf, w_buf, e_buf,
+  SET_10_KERNEL_ARGS(knl, c_buf, V_buf, V_old_buf, x_buf, q_buf, y_buf,
                      P_buf, q_bar_buf, params_buf, done_buf);
   // Add local arguments
   for (int ii = n_arg; ii < n_arg + n_loc; ++ii)
@@ -331,21 +320,20 @@ int main(int argc, char **argv)
   printf("Time elapsed: %f s\n", elapsed);
 
   // Transfer from device
-  read_buf(queue, c_buf, c_all, Nx*Nq*Ns, 0);
-  read_buf(queue, V_buf, V_all, Nx*Nq*Ns, 0);
-  read_buf(queue, done_buf, done, 1, 0);
+  read_buf(queue, c_buf, c_all, Nx*Nq*Ns);
+  read_buf(queue, V_buf, V_all, Nx*Nq*Ns);
+  read_buf(queue, done_buf, done, 1);
 
   CALL_CL_GUARDED(clFinish, (queue));
 
-  /*
   printf("error after kernel: %g \n", done[0]);
 
   printf("after kernel \n");
-  for (int ii = 0; ii < Nx*Nq*Ns; ++ii)
-    {
-      printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
-    }
-  */
+  for (int ix = 0; ix < Nx; ++ix)
+    for (int iq = 0; iq < Nq; ++iq)
+      for (int is = 0; is < Ns; ++is)
+        printf("(%d, %d, %d): c = %g, V = %g \n",
+               ix, iq, is, c_all[Ns*(Nq*ix + iq) + is], V_all[Ns*(Nq*ix + iq) + is]);
 
   // Clean up
   CALL_CL_GUARDED(clFinish, (queue));
@@ -354,8 +342,7 @@ int main(int argc, char **argv)
   CALL_CL_GUARDED(clReleaseMemObject, (V_old_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (x_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (q_buf));
-  CALL_CL_GUARDED(clReleaseMemObject, (w_buf));
-  CALL_CL_GUARDED(clReleaseMemObject, (e_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (y_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (P_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (q_bar_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (done_buf));
@@ -369,6 +356,8 @@ int main(int argc, char **argv)
   free(V_old);
   free(x_grid);
   free(q_grid);
+  free(y_grid);
+  free(q_bar);
   free(P);
   free(done);
 

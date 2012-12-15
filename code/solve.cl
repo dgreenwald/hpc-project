@@ -29,10 +29,9 @@ double interp2(global double* const f_all, double b_x, double b_q,
 
 kernel void solve_iter(global double* c_all, global double* V_all,
                        global double* V_old, constant double* x_grid,
-                       constant double* q_grid, constant double* w_grid,
-                       constant double* e_grid, constant double* P,
-                       constant double* q_bar, constant double* params,
-                       global double* done,
+                       constant double* q_grid, constant double* y_grid,
+                       constant double* P, constant double* q_bar, 
+		       constant double* params,  global double* done,
                        local double* V_next_loc, local double* dU_next_loc,
                        local double* EV_loc, local double* EdU_loc,
                        local double* x_endog_loc, local double* c_endog_loc)
@@ -42,7 +41,6 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   int gq = get_global_id(1);
   int gs = get_global_id(2);
   int gz = gs/NZ;
-  int ge = gs - gz;
   int lx = get_local_id(0);
   int ls = get_local_id(2);
 
@@ -64,20 +62,27 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   double kk = params[6];
   double tol = params[7];
 
+  local double done_loc;
+  if (lx == 0 && gs == 0)
+    done_loc = 1;
+
+  barrier(CLK_LOCAL_MEM_FENCE);
+
   if (gx == 0 && gq == 0 && gs == 0)
     printf("NX = %d, NX_LOC = %d, NX_TOT = %d, NX_BLKS = %d, NQ = %d, NZ = %d, NE = %d, NS = %d \n",
            NX, NX_LOC, NX_TOT, NX_BLKS, NQ, NZ, NE, NS);
 
+  /*
+    printf("(%d, %d, %d): c = %g, V = %g \n",
+    gx, gq, gs, c_all[NS*(NQ*gx + gq) + gs], V_all[NS*(NQ*gx + gq) + gs]);
+  */
+
   if (gx < NX_TOT)
     {
-      /*
       // Calculate current step error
       err_i = fabs(V_all[NS*(NQ*gx + gq) + gs] - V_old[NS*(NQ*gx + gq) + gs]);
       if (err_i > 1e-6)
-      done[0] = 0;
-      else
-      done[0] = 1;
-      */
+        done_loc = 0.0;
 
       // Update V_old
       V_old[NS*(NQ*gx + gq) + gs] = V_all[NS*(NQ*gx + gq) + gs];
@@ -99,19 +104,14 @@ kernel void solve_iter(global double* c_all, global double* V_all,
       jq = floor((NQ-1)*(q_next - q_min)/(q_max - q_min));
       b_q = (q_next - q_grid[jq])/(q_grid[jq+1] - q_grid[jq]);
 
-      y_i = w_grid[gz]*e_grid[ge];
+      y_i = y_grid[gs];
 
       V_next_loc[NS*lx + gs] = interp2(V_all, b_x, b_q, jx, jq, gs);
       c_i = interp2(c_all, b_x, b_q, jx, jq, gs);
       dU_next_loc[NS*lx + gs] = pow(interp2(c_all, b_x, b_q, jx, jq, gs), -gam);
 
-      /*
-        if (gx < NX_TOT)
-        {
-        printf("(%d, %d, %d): V_next_loc = %g, dU_next_loc = %g, c = %g \n",
-        gx, gq, gs, V_next_loc[NS*lx + gs], dU_next_loc[NS*lx + gs], c_i);
-        }
-      */
+      printf("(%d, %d, %d): V_next_loc = %g, dU_next_loc = %g, c = %g \n",
+             gx, gq, gs, V_next_loc[NS*lx + gs], dU_next_loc[NS*lx + gs], c_i);
 
     }
 
@@ -160,11 +160,11 @@ kernel void solve_iter(global double* c_all, global double* V_all,
         {
           x_i = x_grid[ix];
 
-	  /*
-          if ((get_group_id(0) == 0) && gq == 0 && gs == 0)
+          /*
+            if ((get_group_id(0) == 0) && gq == 0 && gs == 0)
             printf("lx = %d, x = %g, x_endog_loc[0] = %g, x_endog_loc[NX_LOC-1] = %g \n",
-                   lx, x_i, x_endog_loc[gs], x_endog_loc[NS*(NX_LOC-1) + gs]);
-	  */
+            lx, x_i, x_endog_loc[gs], x_endog_loc[NS*(NX_LOC-1) + gs]);
+          */
 
           // Boundary case
           if (get_group_id(0) == 0 && x_i < x_endog_loc[gs])
@@ -196,11 +196,11 @@ kernel void solve_iter(global double* c_all, global double* V_all,
               EV_i = EV_loc[NS*jx + gs] + b_x*(EV_loc[NS*(jx+1) + gs] - EV_loc[NS*jx + gs]);
               V_i = pow(c_i, 1-gam)/(1-gam) + bet*EV_i;
 
-	      /*
-              if ((get_group_id(0) == 0) && gq == 0 && gs == 0)
+              /*
+                if ((get_group_id(0) == 0) && gq == 0 && gs == 0)
                 printf("(%d, %d, %d): jx = %d, x_i = %g, c_i = %g, EV_i = %g, V_i = %g \n",
-                       ix, gq, gs, jx, x_i, c_i, EV_i, V_i);
-	      */
+                ix, gq, gs, jx, x_i, c_i, EV_i, V_i);
+              */
 
               // write to global memory
               c_all[NS*(NQ*gx + gq) + gs] = c_i;
@@ -210,6 +210,13 @@ kernel void solve_iter(global double* c_all, global double* V_all,
     }
 
   barrier(CLK_LOCAL_MEM_FENCE);
+
+  if (lx == 0 && gs == 0)
+    if (done_loc < 0.5)
+      done[0] = 0;
+
+  if (gx == 0 && gq == 0 && gs == 0)
+    printf("done = %g \n", done[0]);
 
   return;
 }
