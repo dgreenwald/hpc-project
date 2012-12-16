@@ -142,8 +142,8 @@ int main(int argc, char **argv)
   const cl_int Nx_loc = 32;
   // const cl_int Nx = 64;
   // const cl_int Nx_loc = 64;
-  const cl_int Nx_pad = (Nx-2)/(Nx_loc-1);
-  const cl_int Nx_tot = Nx + Nx_pad;
+  const cl_int Nx_pad = Nx + (Nx-2)/(Nx_loc-1); 
+  const cl_int Nx_tot = Nx_loc*((Nx_pad-1)/Nx_loc + 1)
   const cl_int Nx_blks = (Nx-1)/Nx_loc + 1;
   const cl_int Nq = 3;
   const cl_int Nz = 2;
@@ -276,8 +276,8 @@ int main(int argc, char **argv)
 
   knl_text = read_file("solve.cl");
   char buildOptions[200];
-  sprintf(buildOptions, "-DNX=%d -DNX_LOC=%d -DNX_TOT=%d -DNX_BLKS=%d -DNQ=%d -DNZ=%d -DNE=%d -DNS=%d",
-          Nx, Nx_loc, Nx_tot, Nx_blks, Nq, Nz, Ne, Ns);
+  sprintf(buildOptions, "-DNX=%d -DNX_LOC=%d -DNX_PAD=%d -DNX_TOT=%d -DNX_BLKS=%d -DNQ=%d -DNZ=%d -DNE=%d -DNS=%d",
+          Nx, Nx_loc, Nx_pad, Nx_tot, Nx_blks, Nq, Nz, Ne, Ns);
   // knl = kernel_from_string(ctx, knl_text, "solve", buildOptions);
   cl_program prg = program_from_string(ctx, knl_text, buildOptions);
   knl = clCreateKernel(prg, "solve_iter", &status);
@@ -300,9 +300,9 @@ int main(int argc, char **argv)
 
   size_t ldim[3] = {Nx_loc, 1, Ns};
   // size_t gdim[3] = {ldim[0]*((Nx-1)/(ldim[0]-1) + 1), Nq, Ns};
-  size_t gdim[3] = {ldim[0]*((Nx_tot-1)/ldim[0] + 1), Nq, Ns};
+  size_t gdim[3] = {Nx_tot, Nq, Ns};
 
-  printf("Nx = %d, Nx_tot = %d \n", Nx, Nx_tot);
+  printf("Nx = %d, Nx_pad = %d \n", Nx, Nx_pad);
   printf("ldim = (%d, %d, %d) \n", ldim[0], ldim[1], ldim[2]);
   printf("gdim = (%d, %d, %d) \n", gdim[0], gdim[1], gdim[2]);
 

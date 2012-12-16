@@ -30,8 +30,8 @@ double interp2(global double* const f_all, double b_x, double b_q,
 kernel void solve_iter(global double* c_all, global double* V_all,
                        global double* V_old, constant double* x_grid,
                        constant double* q_grid, constant double* y_grid,
-                       constant double* P, constant double* q_bar, 
-		       constant double* params,  global double* done,
+                       constant double* P, constant double* q_bar,
+                       constant double* params,  global double* done,
                        local double* V_next_loc, local double* dU_next_loc,
                        local double* EV_loc, local double* EdU_loc,
                        local double* x_endog_loc, local double* c_endog_loc)
@@ -41,6 +41,7 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   int gq = get_global_id(1);
   int gs = get_global_id(2);
   int lx = get_local_id(0);
+  int grp_x = get_group_id(0);
 
   int ix, jx, jq;
   int written = 0;
@@ -67,9 +68,9 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   barrier(CLK_LOCAL_MEM_FENCE);
 
   /*
-  if (gx == 0 && gq == 0 && gs == 0)
+    if (gx == 0 && gq == 0 && gs == 0)
     printf("NX = %d, NX_LOC = %d, NX_TOT = %d, NX_BLKS = %d, NQ = %d, NZ = %d, NE = %d, NS = %d \n",
-           NX, NX_LOC, NX_TOT, NX_BLKS, NQ, NZ, NE, NS);
+    NX, NX_LOC, NX_TOT, NX_BLKS, NQ, NZ, NE, NS);
   */
 
   /*
@@ -77,7 +78,17 @@ kernel void solve_iter(global double* c_all, global double* V_all,
     gx, gq, gs, c_all[NS*(NQ*gx + gq) + gs], V_all[NS*(NQ*gx + gq) + gs]);
   */
 
-  if (gx < NX_TOT)
+  // This section calculates the change over the previous
+  // iteration. Each work item evaluates one point.  If the error is
+  // too high, a flag is triggered in local memory, which will
+  // eventually trigger a flag in global memory, indicating that the
+  // algorithm is not done.
+
+  // Afterwards, the "old" function array is updated with the current
+  // values, so that it will be the correct "old" matrix for
+  // calculating the error on the next step.
+
+  if (gx < NX)
     {
       // Calculate current step error
       err_i = fabs(V_all[NS*(NQ*gx + gq) + gs] - V_old[NS*(NQ*gx + gq) + gs]);
@@ -86,17 +97,20 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 
       // Update V_old
       V_old[NS*(NQ*gx + gq) + gs] = V_all[NS*(NQ*gx + gq) + gs];
+    }
 
+  if (gx < NX_PAD)
+    {
       // Calculate expectations
-      x_next = x_grid[gx];
+      jx = (NX_LOC-1)*grp_x + lx;
+      x_next = x_grid[jx];
       if (gx < NX-2)
         {
-          jx = gx;
           b_x = 0;
         }
       else
         {
-          jx = gx-1;
+          --jx;
           b_x = 1;
         }
 
@@ -110,15 +124,21 @@ kernel void solve_iter(global double* c_all, global double* V_all,
       dU_next_loc[NS*lx + gs] = pow(interp2(c_all, b_x, b_q, jx, jq, gs), -gam);
 
       /*
-      printf("(%d, %d, %d): V_next_loc = %g, dU_next_loc = %g, c = %g \n",
-             gx, gq, gs, V_next_loc[NS*lx + gs], dU_next_loc[NS*lx + gs], c_i);
+        printf("(%d, %d, %d): V_next_loc = %g, dU_next_loc = %g, c = %g \n",
+        gx, gq, gs, V_next_loc[NS*lx + gs], dU_next_loc[NS*lx + gs], c_i);
       */
 
     }
 
+  // This section calculates the optimal consumption policy, c, on an
+  // endogenous (i.e. not fixed) grid of x points, both of which are
+  // stored in local memory. Each work item is responsible for a
+  // single point, and the ends are "padded" so that the intervals are
+  // continuous.
+
   barrier(CLK_LOCAL_MEM_FENCE);
 
-  if (gx < NX_TOT)
+  if (gx < NX_PAD)
     {
       EV_loc[NS*lx + gs] = 0.0;
       EdU_loc[NS*lx + gs] = 0.0;
@@ -152,6 +172,20 @@ kernel void solve_iter(global double* c_all, global double* V_all,
     printf("(%d, %d, %d): x_endog_loc[NX_LOC-1] = %g \n", gx, gq, gs, x_endog_loc[NS*(NX_LOC-1) + gs]);
     }
   */
+
+  // This section loops through blocks of the x grid.
+
+  // Each block gets loaded into memory. Each work item checks if its
+  // x point falls in the bounds of its work-group's endogenous grid,
+  // if so, it interpolates and writes the value.
+
+  // The one special case is that there will be a number of values for
+  // which x falls below the bottom of the lowest x_endog interval. In
+  // this case, the agent saves nothing (sets x_next = x_min) and
+  // consumes his or her entire income, from which we can obtain the
+  // correct consumption value.
+
+  // The code then proceeds to the next block, etc.
 
   for (int iblk = 0; iblk < NX_BLKS; ++iblk)
     {
@@ -212,6 +246,8 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 
   barrier(CLK_LOCAL_MEM_FENCE);
 
+  // Aggregate local flags for convergence into a global flag (so
+  // everyone is not writing the global flag at once)
   if (lx == 0 && gs == 0)
     if (done_loc < 0.5)
       done[0] = 0;
