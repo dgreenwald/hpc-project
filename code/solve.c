@@ -138,12 +138,12 @@ int main(int argc, char **argv)
   const cl_double q_max = pow(1.25, 1/freq);
   const cl_double x_min = -10;
   const cl_double x_max = 100;
-  const cl_int Nx = 32;
-  const cl_int Nx_loc = 32;
+  const cl_int Nx = 8;
+  const cl_int Nx_loc = 8;
   // const cl_int Nx = 64;
   // const cl_int Nx_loc = 64;
   const cl_int Nx_pad = Nx + (Nx-2)/(Nx_loc-1); 
-  const cl_int Nx_tot = Nx_loc*((Nx_pad-1)/Nx_loc + 1)
+  const cl_int Nx_tot = Nx_loc*((Nx_pad-1)/Nx_loc + 1);
   const cl_int Nx_blks = (Nx-1)/Nx_loc + 1;
   const cl_int Nq = 3;
   const cl_int Nz = 2;

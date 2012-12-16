@@ -42,9 +42,9 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   int gs = get_global_id(2);
   int lx = get_local_id(0);
   int grp_x = get_group_id(0);
+  int Ngrp_x = get_num_groups(0);
 
-  int ix, jx, jq;
-  int written = 0;
+  int ix, jx, kx, jq;
   double x_next, q_next, b_x, b_q, dU_next,
     x_i, c_i, EV_i, V_i, EdU_i, y_i, err_i;
 
@@ -190,16 +190,15 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   for (int iblk = 0; iblk < NX_BLKS; ++iblk)
     {
 
-      ix = iblk*NX_LOC + lx;
+      ix = iblk*NX_LOC + lx;      
       if (ix < NX)
         {
           x_i = x_grid[ix];
-
-          /*
-            if ((get_group_id(0) == 0) && gq == 0 && gs == 0)
-            printf("lx = %d, x = %g, x_endog_loc[0] = %g, x_endog_loc[NX_LOC-1] = %g \n",
-            lx, x_i, x_endog_loc[gs], x_endog_loc[NS*(NX_LOC-1) + gs]);
-          */
+	  kx = min(NX_LOC-1, NX - (NX_LOC-1)*grp_x);
+	  /*
+            printf("lx = %d, x = %g, kx = %d, x_endog_loc[0] = %g, x_endog_loc[kx] = %g \n",
+		   lx, kx, x_i, x_endog_loc[gs], x_endog_loc[NS*kx + gs]);
+	  */
 
           // Boundary case
           if (get_group_id(0) == 0 && x_i < x_endog_loc[gs])
@@ -215,10 +214,10 @@ kernel void solve_iter(global double* c_all, global double* V_all,
               V_all[NS*(NQ*gx + gq) + gs] = V_i;
             }
           else if (x_i >= x_endog_loc[gs]
-                   && x_i <= x_endog_loc[NS*(NX_LOC-1) + gs])
+                   && x_i <= x_endog_loc[NS*kx + gs])
             {
               // look up index for interpolation
-              bnds = (int2) (0, NX_LOC-1);
+              bnds = (int2) (0, kx);
               while(bnds.s1 > bnds.s0 + 1)
                 {
                   bnds = bisect(x_endog_loc, x_i, bnds, gs);
