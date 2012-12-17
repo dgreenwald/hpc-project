@@ -77,6 +77,7 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   */
 
   /*
+    if (gx < NX)
     printf("(%d, %d, %d): c = %g, V = %g \n",
     gx, gq, gs, c_all[NS*(NQ*gx + gq) + gs], V_all[NS*(NQ*gx + gq) + gs]);
   */
@@ -143,6 +144,8 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 
   if (gx < NX_PAD)
     {
+      jx = (NX_LOC-1)*grp_x + lx;
+
       EV_loc[NS*lx + gs] = 0.0;
       EdU_i = 0.0;
       for (int is = 0; is < NS; ++is)
@@ -152,15 +155,15 @@ kernel void solve_iter(global double* c_all, global double* V_all,
         }
 
       c_endog_loc[NS*lx + gs] = pow(bet*EdU_i/q_i, -1/gam);
-      x_endog_loc[NS*lx + gs] = c_endog_loc[NS*lx + gs] + x_grid[gx]*q_i - y_i;
+      x_endog_loc[NS*lx + gs] = c_endog_loc[NS*lx + gs] + x_grid[jx]*q_i - y_i;
 
       /*
-        if ((get_group_id(0) == 0) && gq == 0 && gs == 0)
+      if ((get_group_id(0) == 1) && gq == 0 && gs == 0)
         {
-        printf("(%d, %d, %d): EdU_loc[NS*lx + gs] = %g \n", gx, gq, gs, EdU_loc[NS*lx + gs]);
-        printf("(%d, %d, %d): EV_loc[NS*lx + gs] = %g \n", gx, gq, gs, EV_loc[NS*lx + gs]);
-        printf("(%d, %d, %d): c_endog_loc[NS*lx + gs] = %g \n", gx, gq, gs, c_endog_loc[NS*lx + gs]);
-        printf("(%d, %d, %d): x_endog_loc[NS*lx + gs] = %g \n", gx, gq, gs, x_endog_loc[NS*lx + gs]);
+          printf("(%d, %d, %d): EdU_loc[NS*lx + gs] = %g \n", jx, gq, gs, EdU_i);
+          printf("(%d, %d, %d): EV_loc[NS*lx + gs] = %g \n", jx, gq, gs, EV_loc[NS*lx + gs]);
+          printf("(%d, %d, %d): c_endog_loc[NS*lx + gs] = %g \n", jx, gq, gs, c_endog_loc[NS*lx + gs]);
+          printf("(%d, %d, %d): x_endog_loc[NS*lx + gs] = %g \n", jx, gq, gs, x_endog_loc[NS*lx + gs]);
         }
       */
 
@@ -197,42 +200,48 @@ kernel void solve_iter(global double* c_all, global double* V_all,
       if (ix < NX)
         {
           x_i = x_grid[ix];
-	  // This finds the last relevant local index
-          kx = min(NX_LOC-1, NX - (NX_LOC-1)*grp_x - 1);
+          // This finds the last relevant local index
+          if (grp_x < Ngrp_x - 1)
+            kx = NX_LOC-1;
+          else
+            kx = NX_PAD - (NX_TOT - NX_LOC) - 1;
 
-          /*
-            if (gq == 0 && gs == 0)
+          // kx = min(NX_LOC-1, NX - (NX_LOC-1)*grp_x - 1);
+
+	  /*
+          if (lx == 0 && gq == 0 && gs == 0)
             {
-            printf("lx = %d, x = %g, kx = %d, x_endog_loc[0] = %g, x_endog_loc[kx] = %g \n",
-            lx, kx, x_i, x_endog_loc[gs], x_endog_loc[NS*kx + gs]);
-            printf("lx = %d, kx = %d, c_endog_loc[0] = %g, c_endog_loc[kx] = %g \n",
-            lx, kx, c_endog_loc[gs], c_endog_loc[NS*kx + gs]);
+              printf("lx = %d, group = %d, x_endog_loc[0] = %g, x_endog_loc[kx] = %g \n",
+                     lx, get_group_id(0), x_endog_loc[gs], x_endog_loc[NS*kx + gs]);
+              printf("lx = %d, group = %d, c_endog_loc[0] = %g, c_endog_loc[kx] = %g \n",
+                     lx, get_group_id(0), c_endog_loc[gs], c_endog_loc[NS*kx + gs]);
             }
-          */
+	  */
 
           // Boundary case
           if (get_group_id(0) == 0 && x_i < x_endog_loc[gs])
             {
               b_x = (x_i - x_min)/(x_endog_loc[gs] - x_min);
 
-	      c_min = y_i + (1 - q_i)*x_min;
-              c_i = c_min + b_x*(c_endog_loc[gs] - c_min);
+              c_min = y_i + (1 - q_i)*x_min;
+              c_i = max(c_min + b_x*(c_endog_loc[gs] - c_min), 1e-6);
               EV_i = EV_loc[gs];
               V_i = pow(c_i, 1-gam)/(1-gam) + bet*EV_i;
+
+	      /*
+              if (gq == 0 && gs == 0)
+                {
+                  printf("(%d, %d, %d): jx = %d, x_i = %g, xlo = %g, xhi = %g \n",
+                         ix, gq, gs, jx, x_i, x_min, x_endog_loc[gs]);
+                  printf("(%d, %d, %d): jx = %d, c_i = %g, clo = %g, chi = %g \n",
+                         ix, gq, gs, jx, c_i, y_i, c_endog_loc[gs]);
+                }
+	      */
 
               // write to global memory
               c_all[NS*(NQ*ix + gq) + gs] = c_i;
               V_all[NS*(NQ*ix + gq) + gs] = V_i;
 
-              /*
-                if (gq == 0 && gs == 0)
-                {
-                printf("(%d, %d, %d): jx = %d, x_i = %g, xlo = %g, xhi = %g \n",
-                ix, gq, gs, jx, x_i, x_min, x_endog_loc[gs]);
-                printf("(%d, %d, %d): jx = %d, c_i = %g, clo = %g, chi = %g \n",
-                ix, gq, gs, jx, c_i, y_i, c_endog_loc[gs]);
-                }
-              */
             }
           else if (x_i >= x_endog_loc[gs]
                    && x_i <= x_endog_loc[NS*kx + gs])
@@ -247,7 +256,7 @@ kernel void solve_iter(global double* c_all, global double* V_all,
               b_x = (x_i - x_endog_loc[NS*jx + gs])/(x_endog_loc[NS*(jx+1) + gs] - x_endog_loc[NS*jx + gs]);
 
               // interpolate to calculate c, EV, then calculate V
-              c_i = c_endog_loc[NS*jx + gs] + b_x*(c_endog_loc[NS*(jx+1) + gs] - c_endog_loc[NS*jx + gs]);
+              c_i = max(c_endog_loc[NS*jx + gs] + b_x*(c_endog_loc[NS*(jx+1) + gs] - c_endog_loc[NS*jx + gs]), 1e-6);
               EV_i = EV_loc[NS*jx + gs] + b_x*(EV_loc[NS*(jx+1) + gs] - EV_loc[NS*jx + gs]);
               V_i = pow(c_i, 1-gam)/(1-gam) + bet*EV_i;
 
@@ -257,15 +266,15 @@ kernel void solve_iter(global double* c_all, global double* V_all,
                 ix, gq, gs, jx, x_i, c_i, EV_i, V_i);
               */
 
-              /*
-                if (gq == 0 && gs == 0)
+	      /*
+              if (gq == 0 && gs == 0)
                 {
-                printf("(%d, %d, %d): jx = %d, x_i = %g, xlo = %g, xhi = %g \n",
-                ix, gq, gs, jx, x_i, x_endog_loc[NS*jx + gs], x_endog_loc[NS*(jx+1) + gs]);
-                printf("(%d, %d, %d): jx = %d, c_i = %g, clo = %g, chi = %g \n",
-                ix, gq, gs, jx, c_i, c_endog_loc[NS*jx + gs], c_endog_loc[NS*(jx+1) + gs]);
+                  printf("(%d, %d, %d): jx = %d, x_i = %g, xlo = %g, xhi = %g \n",
+                         ix, gq, gs, jx, x_i, x_endog_loc[NS*jx + gs], x_endog_loc[NS*(jx+1) + gs]);
+                  printf("(%d, %d, %d): jx = %d, c_i = %g, clo = %g, chi = %g \n",
+                         ix, gq, gs, jx, c_i, c_endog_loc[NS*jx + gs], c_endog_loc[NS*(jx+1) + gs]);
                 }
-              */
+	      */
 
               // write to global memory
               c_all[NS*(NQ*gx + gq) + gs] = c_i;
