@@ -33,7 +33,7 @@ kernel void solve_iter(global double* c_all, global double* V_all,
                        constant double* P, constant double* q_bar,
                        constant double* params,  global int* done,
                        local double* V_next_loc, local double* dU_next_loc,
-                       local double* EV_loc, local double* EdU_loc,
+                       local double* EV_loc,
                        local double* x_endog_loc, local double* c_endog_loc)
 {
 
@@ -46,7 +46,7 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 
   int ix, jx, kx, jq;
   double x_next, q_next, b_x, b_q,
-    x_i, q_i, c_i, EV_i, V_i, y_i, err_i, c_min;
+    x_i, q_i, c_i, EV_i, EdU_i, V_i, y_i, err_i, c_min;
 
   int2 bnds;
 
@@ -61,6 +61,7 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   // double kk = params[6];
   double tol = params[7];
 
+  // Initialize local done variable
   local int done_loc;
   if (lx == 0 && gs == 0)
     done_loc = 1;
@@ -103,7 +104,7 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 
   if (gx < NX_PAD)
     {
-      // Calculate expectations
+      // Calculate next period values
       jx = (NX_LOC-1)*grp_x + lx;
       x_next = x_grid[jx];
       if (gx < NX-2)
@@ -143,14 +144,14 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   if (gx < NX_PAD)
     {
       EV_loc[NS*lx + gs] = 0.0;
-      EdU_loc[NS*lx + gs] = 0.0;
+      EdU_i = 0.0;
       for (int is = 0; is < NS; ++is)
         {
           EV_loc[NS*lx + gs] += P[NS*is + gs]*V_next_loc[NS*lx + is];
-          EdU_loc[NS*lx + gs] += P[NS*is + gs]*dU_next_loc[NS*lx + is];
+          EdU_i += P[NS*is + gs]*dU_next_loc[NS*lx + is];
         }
 
-      c_endog_loc[NS*lx + gs] = pow(bet*EdU_loc[NS*lx + gs]/q_i, -1/gam);
+      c_endog_loc[NS*lx + gs] = pow(bet*EdU_i/q_i, -1/gam);
       x_endog_loc[NS*lx + gs] = c_endog_loc[NS*lx + gs] + x_grid[gx]*q_i - y_i;
 
       /*
@@ -196,6 +197,7 @@ kernel void solve_iter(global double* c_all, global double* V_all,
       if (ix < NX)
         {
           x_i = x_grid[ix];
+	  // This finds the last relevant local index
           kx = min(NX_LOC-1, NX - (NX_LOC-1)*grp_x - 1);
 
           /*

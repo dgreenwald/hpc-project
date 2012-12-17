@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <math.h>
 
+// Polynomial spaced grid
 cl_double* poly_grid(cl_double f_min, cl_double f_max, cl_double k, cl_long N)
 {
   cl_double *f = malloc(sizeof(cl_double)*N);
@@ -16,6 +17,7 @@ cl_double* poly_grid(cl_double f_min, cl_double f_max, cl_double k, cl_long N)
   return f;
 }
 
+// Transition probability matrix
 cl_double* getP(double u_b, double u_g, double dur_b, double dur_g, double udur_b, double udur_g,
                 double rat_bg, double rat_gb)
 {
@@ -342,7 +344,7 @@ int main(int argc, char **argv)
 
   // Add global arguments
   int n_arg = 10;
-  int n_loc = 6;
+  int n_loc = 5;
   SET_10_KERNEL_ARGS(solve_iter_knl, c_buf, V_buf, V_old_buf, x_buf, q_buf, y_buf,
                      P_buf, q_bar_buf, params_buf, done_buf);
   // Add local arguments
@@ -364,6 +366,7 @@ int main(int argc, char **argv)
   while (done_end[0] == 0)
     {
       ++iter;
+      // initialize with done = 1
       write_ibuf(queue, done_buf, done_start, 1);
 
       // CALL_CL_GUARDED(clFinish, (queue));
@@ -384,9 +387,11 @@ int main(int argc, char **argv)
   printf("Time elapsed: %f s\n", elapsed);
   printf("%d iterations to convergence \n", iter);
 
+  /*
   read_dbuf(queue, c_buf, c_all, Nx*Nq*Ns);
   read_dbuf(queue, V_buf, V_all, Nx*Nq*Ns);
   read_dbuf(queue, V_old_buf, V_old, Nx*Nq*Ns);
+  */
 
   CALL_CL_GUARDED(clFinish, (queue));
   /*
@@ -431,6 +436,7 @@ int main(int argc, char **argv)
 
   // Initialize arrays
   double draw;
+  // Draw recession/expansion states
   for (int tt = 0; tt < Nt; ++tt)
     {
       if (tt > 0)
@@ -449,6 +455,7 @@ int main(int argc, char **argv)
         }
     }
 
+  // Draw employment states for each individual
   double Pe[Ne][Ne];
   for (int tt = 0; tt < Nt; ++tt)
     {
