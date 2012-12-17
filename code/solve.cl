@@ -68,13 +68,12 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   barrier(CLK_LOCAL_MEM_FENCE);
 
   /*
-  if (gx == 0 && gq == 0 && gs == 0)
-    printf("NX = %d, NX_LOC = %d, NX_PAD = %d, NX_TOT = %d, NX_BLKS = %d, NQ = %d, NZ = %d, NE = %d, NS = %d \n",
-           NX, NX_LOC, NX_PAD, NX_TOT, NX_BLKS, NQ, NZ, NE, NS);
+    if (gx == 0 && gq == 0 && gs == 0)
+    printf("NX = %d, NX_LOC = %d, NX_TOT = %d, NX_BLKS = %d, NQ = %d, NZ = %d, NE = %d, NS = %d \n",
+    NX, NX_LOC, NX_TOT, NX_BLKS, NQ, NZ, NE, NS);
   */
 
   /*
-    if (gx < NX)
     printf("(%d, %d, %d): c = %g, V = %g \n",
     gx, gq, gs, c_all[NS*(NQ*gx + gq) + gs], V_all[NS*(NQ*gx + gq) + gs]);
   */
@@ -150,16 +149,14 @@ kernel void solve_iter(global double* c_all, global double* V_all,
         }
 
       c_endog_loc[NS*lx + gs] = pow(bet*EdU_loc[NS*lx + gs]/q_grid[gq], -1/gam);
-      x_endog_loc[NS*lx + gs] = c_endog_loc[NS*lx + gs] + x_next*q_grid[gq] - y_i;
+      x_endog_loc[NS*lx + gs] = c_endog_loc[NS*lx + gs] + x_grid[gx]*q_grid[gq] - y_i;
 
       /*
-        if (gq == 0 && gs == 0)
+        if ((get_group_id(0) == 0) && gq == 0 && gs == 0)
         {
-        printf("(%d, %d, %d): x_next = %g \n", gx, gq, gs, x_next);
         printf("(%d, %d, %d): EdU_loc[NS*lx + gs] = %g \n", gx, gq, gs, EdU_loc[NS*lx + gs]);
         printf("(%d, %d, %d): EV_loc[NS*lx + gs] = %g \n", gx, gq, gs, EV_loc[NS*lx + gs]);
         printf("(%d, %d, %d): c_endog_loc[NS*lx + gs] = %g \n", gx, gq, gs, c_endog_loc[NS*lx + gs]);
-        printf("(%d, %d, %d): x*q = %g, y_i = %g \n", gx, gq, gs, x_next*q_grid[gq], y_i);
         printf("(%d, %d, %d): x_endog_loc[NS*lx + gs] = %g \n", gx, gq, gs, x_endog_loc[NS*lx + gs]);
         }
       */
@@ -193,20 +190,14 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   for (int iblk = 0; iblk < NX_BLKS; ++iblk)
     {
 
-      ix = iblk*NX_LOC + lx;
+      ix = iblk*NX_LOC + lx;      
       if (ix < NX)
         {
           x_i = x_grid[ix];
-          kx = min(NX_LOC-1, NX - (NX_LOC-1)*grp_x - 1);
-
+	  kx = min(NX_LOC-1, NX - (NX_LOC-1)*grp_x);
 	  /*
-          if (gq == 0 && gs == 0)
-            {
-              printf("lx = %d, x = %g, kx = %d, x_endog_loc[0] = %g, x_endog_loc[kx] = %g \n",
-                     lx, kx, x_i, x_endog_loc[gs], x_endog_loc[NS*kx + gs]);
-              printf("lx = %d, kx = %d, c_endog_loc[0] = %g, c_endog_loc[kx] = %g \n",
-                     lx, kx, c_endog_loc[gs], c_endog_loc[NS*kx + gs]);
-            }
+            printf("lx = %d, x = %g, kx = %d, x_endog_loc[0] = %g, x_endog_loc[kx] = %g \n",
+		   lx, kx, x_i, x_endog_loc[gs], x_endog_loc[NS*kx + gs]);
 	  */
 
           // Boundary case
@@ -219,18 +210,8 @@ kernel void solve_iter(global double* c_all, global double* V_all,
               V_i = pow(c_i, 1-gam)/(1-gam) + bet*EV_i;
 
               // write to global memory
-              c_all[NS*(NQ*ix + gq) + gs] = c_i;
-              V_all[NS*(NQ*ix + gq) + gs] = V_i;
-
-	      /*
-              if (gq == 0 && gs == 0)
-                {
-                  printf("(%d, %d, %d): jx = %d, x_i = %g, xlo = %g, xhi = %g \n",
-                         ix, gq, gs, jx, x_i, x_min, x_endog_loc[gs]);
-                  printf("(%d, %d, %d): jx = %d, c_i = %g, clo = %g, chi = %g \n",
-                         ix, gq, gs, jx, c_i, y_i, c_endog_loc[gs]);
-                }
-	      */
+              c_all[NS*(NQ*gx + gq) + gs] = c_i;
+              V_all[NS*(NQ*gx + gq) + gs] = V_i;
             }
           else if (x_i >= x_endog_loc[gs]
                    && x_i <= x_endog_loc[NS*kx + gs])
@@ -250,24 +231,14 @@ kernel void solve_iter(global double* c_all, global double* V_all,
               V_i = pow(c_i, 1-gam)/(1-gam) + bet*EV_i;
 
               /*
-                if (gq == 0 && gs == 0)
+                if ((get_group_id(0) == 0) && gq == 0 && gs == 0)
                 printf("(%d, %d, %d): jx = %d, x_i = %g, c_i = %g, EV_i = %g, V_i = %g \n",
                 ix, gq, gs, jx, x_i, c_i, EV_i, V_i);
               */
 
-	      /*
-              if (gq == 0 && gs == 0)
-                {
-                  printf("(%d, %d, %d): jx = %d, x_i = %g, xlo = %g, xhi = %g \n",
-                         ix, gq, gs, jx, x_i, x_endog_loc[NS*jx + gs], x_endog_loc[NS*(jx+1) + gs]);
-                  printf("(%d, %d, %d): jx = %d, c_i = %g, clo = %g, chi = %g \n",
-                         ix, gq, gs, jx, c_i, c_endog_loc[NS*jx + gs], c_endog_loc[NS*(jx+1) + gs]);
-                }
-	      */
-
               // write to global memory
-              c_all[NS*(NQ*ix + gq) + gs] = c_i;
-              V_all[NS*(NQ*ix + gq) + gs] = V_i;
+              c_all[NS*(NQ*gx + gq) + gs] = c_i;
+              V_all[NS*(NQ*gx + gq) + gs] = V_i;
             }
         }
     }

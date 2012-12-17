@@ -138,11 +138,11 @@ int main(int argc, char **argv)
   const cl_double q_max = pow(1.25, 1/freq);
   const cl_double x_min = -10;
   const cl_double x_max = 100;
-  const cl_int Nx = 1000;
-  const cl_int Nx_loc = 32;
+  const cl_int Nx = 8;
+  const cl_int Nx_loc = 8;
   // const cl_int Nx = 64;
   // const cl_int Nx_loc = 64;
-  const cl_int Nx_pad = Nx + (Nx-2)/(Nx_loc-1);
+  const cl_int Nx_pad = Nx + (Nx-2)/(Nx_loc-1); 
   const cl_int Nx_tot = Nx_loc*((Nx_pad-1)/Nx_loc + 1);
   const cl_int Nx_blks = (Nx-1)/Nx_loc + 1;
   const cl_int Nq = 3;
@@ -341,16 +341,13 @@ int main(int argc, char **argv)
 
   CALL_CL_GUARDED(clFinish, (queue));
 
-  /*
   printf("after kernel \n");
   for (int ix = 0; ix < Nx; ++ix)
     for (int iq = 0; iq < Nq; ++iq)
       for (int is = 0; is < Ns; ++is)
-        if (iq == 0 && is == 0)
-          printf("(%d, %d, %d): c = %g, V = %g, V_old = %g \n",
-                 ix, iq, is, c_all[Ns*(Nq*ix + iq) + is], V_all[Ns*(Nq*ix + iq) + is],
-                 V_old[Ns*(Nq*ix + iq) + is]);
-  */
+        printf("(%d, %d, %d): c = %g, V = %g, V_old = %g \n",
+               ix, iq, is, c_all[Ns*(Nq*ix + iq) + is], V_all[Ns*(Nq*ix + iq) + is],
+               V_old[Ns*(Nq*ix + iq) + is]);
 
   // V_old no longer needed
   CALL_CL_GUARDED(clReleaseMemObject, (V_old_buf));

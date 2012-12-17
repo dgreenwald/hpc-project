@@ -17,7 +17,7 @@ cl_float* poly_grid(cl_float f_min, cl_float f_max, cl_float k, cl_long N)
 }
 
 cl_float* getP(float u_b, float u_g, float dur_b, float dur_g, float udur_b, float udur_g,
-                float rat_bg, float rat_gb)
+               float rat_bg, float rat_gb)
 {
   cl_float *P = malloc(sizeof(cl_float)*16);
   if (!P) { perror("alloc error in getP"); abort(); }
@@ -138,12 +138,12 @@ int main(int argc, char **argv)
   const cl_float q_max = pow(1.25, 1/freq);
   const cl_float x_min = -10;
   const cl_float x_max = 100;
-  const cl_int Nx = 500;
-  const cl_int Nx_loc = 128;
+  const cl_int Nx = 32;
+  const cl_int Nx_loc = 32;
   // const cl_int Nx = 64;
   // const cl_int Nx_loc = 64;
-  const cl_int Nx_pad = Nx + (Nx-2)/(Nx_loc-1);
-  const cl_int Nx_tot = Nx_loc*((Nx_pad-1)/Nx_loc + 1);
+  const cl_int Nx_pad = (Nx-2)/(Nx_loc-1);
+  const cl_int Nx_tot = Nx + Nx_pad;
   const cl_int Nx_blks = (Nx-1)/Nx_loc + 1;
   const cl_int Nq = 3;
   const cl_int Nz = 2;
@@ -276,8 +276,8 @@ int main(int argc, char **argv)
 
   knl_text = read_file("solve_float.cl");
   char buildOptions[200];
-  sprintf(buildOptions, "-DNX=%d -DNX_LOC=%d -DNX_PAD=%d -DNX_TOT=%d -DNX_BLKS=%d -DNQ=%d -DNZ=%d -DNE=%d -DNS=%d",
-          Nx, Nx_loc, Nx_pad, Nx_tot, Nx_blks, Nq, Nz, Ne, Ns);
+  sprintf(buildOptions, "-DNX=%d -DNX_LOC=%d -DNX_TOT=%d -DNX_BLKS=%d -DNQ=%d -DNZ=%d -DNE=%d -DNS=%d",
+          Nx, Nx_loc, Nx_tot, Nx_blks, Nq, Nz, Ne, Ns);
   // knl = kernel_from_string(ctx, knl_text, "solve", buildOptions);
   cl_program prg = program_from_string(ctx, knl_text, buildOptions);
   knl = clCreateKernel(prg, "solve_iter", &status);
@@ -300,9 +300,9 @@ int main(int argc, char **argv)
 
   size_t ldim[3] = {Nx_loc, 1, Ns};
   // size_t gdim[3] = {ldim[0]*((Nx-1)/(ldim[0]-1) + 1), Nq, Ns};
-  size_t gdim[3] = {Nx_tot, Nq, Ns};
+  size_t gdim[3] = {ldim[0]*((Nx_tot-1)/ldim[0] + 1), Nq, Ns};
 
-  printf("Nx = %d, Nx_pad = %d \n", Nx, Nx_pad);
+  printf("Nx = %d, Nx_tot = %d \n", Nx, Nx_tot);
   printf("ldim = (%d, %d, %d) \n", ldim[0], ldim[1], ldim[2]);
   printf("gdim = (%d, %d, %d) \n", gdim[0], gdim[1], gdim[2]);
 
@@ -341,10 +341,9 @@ int main(int argc, char **argv)
   for (int ix = 0; ix < Nx; ++ix)
     for (int iq = 0; iq < Nq; ++iq)
       for (int is = 0; is < Ns; ++is)
-        if (iq == 0 && is == 0)
-          printf("(%d, %d, %d): c = %g, V = %g, V_old = %g \n",
-                 ix, iq, is, c_all[Ns*(Nq*ix + iq) + is], V_all[Ns*(Nq*ix + iq) + is],
-                 V_old[Ns*(Nq*ix + iq) + is]);
+        printf("(%d, %d, %d): c = %g, V = %g, V_old = %g \n",
+               ix, iq, is, c_all[Ns*(Nq*ix + iq) + is], V_all[Ns*(Nq*ix + iq) + is],
+	        V_old[Ns*(Nq*ix + iq) + is]);
 
   // Clean up
   CALL_CL_GUARDED(clFinish, (queue));
