@@ -139,7 +139,7 @@ int main(int argc, char **argv)
   const cl_double x_min = -10;
   const cl_double x_max = 100;
   const cl_int Nx = 1000;
-  const cl_int Nx_loc = 64;
+  const cl_int Nx_loc = 32;
   // const cl_int Nx = 64;
   // const cl_int Nx_loc = 64;
   const cl_int Nx_pad = Nx + (Nx-2)/(Nx_loc-1);
@@ -150,6 +150,8 @@ int main(int argc, char **argv)
   const cl_int Ne = 2;
   const cl_int Ns = Nz*Ne;
   const cl_int Npar = 8;
+  const cl_int Nsim = 100; // Number of simulated agents
+  const cl_int Nt = 100; // Number of periods for simulation
 
   cl_double* x_grid = poly_grid(x_min, x_max, k, Nx);
   cl_double* q_grid = poly_grid(q_min, q_max, 1.0, Nq); // 1.0 for even grid
@@ -276,8 +278,9 @@ int main(int argc, char **argv)
 
   knl_text = read_file("solve.cl");
   char buildOptions[200];
-  sprintf(buildOptions, "-DNX=%d -DNX_LOC=%d -DNX_PAD=%d -DNX_TOT=%d -DNX_BLKS=%d -DNQ=%d -DNZ=%d -DNE=%d -DNS=%d",
-          Nx, Nx_loc, Nx_pad, Nx_tot, Nx_blks, Nq, Nz, Ne, Ns);
+  sprintf(buildOptions, "-DNX=%d -DNX_LOC=%d -DNX_PAD=%d -DNX_TOT=%d -DNX_BLKS=%d -DNQ=%d -DNS=%d"
+	  " -DNSIM = %d -DNT",
+          Nx, Nx_loc, Nx_pad, Nx_tot, Nx_blks, Nq, Ns, Nsim, Nt);
   // knl = kernel_from_string(ctx, knl_text, "solve", buildOptions);
   cl_program prg = program_from_string(ctx, knl_text, buildOptions);
   knl = clCreateKernel(prg, "solve_iter", &status);
@@ -306,6 +309,7 @@ int main(int argc, char **argv)
   printf("ldim = (%d, %d, %d) \n", ldim[0], ldim[1], ldim[2]);
   printf("gdim = (%d, %d, %d) \n", gdim[0], gdim[1], gdim[2]);
 
+  // Iterate to convergence
   int iter = 0;
   while (done_end[0] < 0.5)
     {
@@ -348,24 +352,46 @@ int main(int argc, char **argv)
                  V_old[Ns*(Nq*ix + iq) + is]);
   */
 
+  // V_old no longer needed
+  CALL_CL_GUARDED(clReleaseMemObject, (V_old_buf));
+  free(V_old);
+
+  /**********************************************
+   ** SIMULATION CODE
+  **********************************************/
+
+  // Allocate host memory
+  cl_double *c_sim = malloc(sizeof(cl_double) * Nsim * Nt);
+   if (!c_sim) { perror("alloc c_sim"); abort(); }
+
+  cl_double *q_t = malloc(sizeof(cl_double));
+   if (!q_t) { perror("alloc q_t"); abort(); }  
+
+   // Allocate device memory
+   cl_mem c_sim_buf = alloc_buf(ctx, Nsim*Nt, 1, 1);
+   cl_mem q_t_buf = alloc_buf(ctx, 1, 1, 1);   
+
   // Clean up
   CALL_CL_GUARDED(clFinish, (queue));
   CALL_CL_GUARDED(clReleaseMemObject, (c_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (V_buf));
-  CALL_CL_GUARDED(clReleaseMemObject, (V_old_buf));
+  // CALL_CL_GUARDED(clReleaseMemObject, (V_old_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (x_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (q_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (y_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (P_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (q_bar_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (done_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (c_sim_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (q_t_buf));
+
   CALL_CL_GUARDED(clReleaseProgram, (prg));
   CALL_CL_GUARDED(clReleaseCommandQueue, (queue));
   CALL_CL_GUARDED(clReleaseContext, (ctx));
 
   free(c_all);
   free(V_all);
-  free(V_old);
+  // free(V_old);
   free(x_grid);
   free(q_grid);
   free(y_grid);
@@ -373,6 +399,8 @@ int main(int argc, char **argv)
   free(P);
   free(done_start);
   free(done_end);
+  free(c_sim);
+  free(q_t);
 
   return 0;
 
