@@ -176,25 +176,25 @@ int main(int argc, char **argv)
   const cl_double gam = 2.0;
   const cl_double bet = pow(0.95, 1/freq);
   const cl_double q_min = 0.5;
-  const cl_double q_max = 1.4;
-  const cl_double x_min = -10;
-  const cl_double x_max = 100;
-  const cl_int Nx = 8;
-  const cl_int Nx_loc = 8;
+  const cl_double q_max = 1.5;
+  const cl_double x_min = -0.5;
+  const cl_double x_max = 10;
+  const cl_int Nx = 500;
+  const cl_int Nx_loc = 64;
   // const cl_int Nx = 64;
   // const cl_int Nx_loc = 64;
   const cl_int Nx_pad = Nx + (Nx-2)/(Nx_loc-1); 
   const cl_int Nx_tot = Nx_loc*((Nx_pad-1)/Nx_loc + 1);
   const cl_int Nx_blks = (Nx-1)/Nx_loc + 1;
-  const cl_int Nq = 3;
+  const cl_int Nq = 8;
   const cl_int Nz = 2;
   const cl_int Ne = 2;
   const cl_int Ns = Nz*Ne;
   const cl_int Npar = 8;
-  const cl_int Nsim = 16;
-  const cl_int Nsim_loc = 16;
+  const cl_int Nsim = 64;
+  const cl_int Nsim_loc = 64;
   const cl_int Ngrps_sim = (Nsim - 1)/Nsim_loc + 1;
-  const cl_int Nt = 20;
+  const cl_int Nt = 100;
 
   cl_double* x_grid = poly_grid(x_min, x_max, k, Nx);
   cl_double* q_grid = poly_grid(q_min, q_max, 1.0, Nq); // 1.0 for even grid
@@ -376,6 +376,7 @@ int main(int argc, char **argv)
 
       // Transfer from device
       read_ibuf(queue, done_buf, done_end, 1);
+      // printf("iteration %d complete \n", iter);
     }
 
   get_timestamp(&time2);
@@ -556,6 +557,7 @@ int main(int argc, char **argv)
                            NULL, gdim_sim, ldim_sim, 0, NULL, NULL));
 
           CALL_CL_GUARDED(clFinish, (queue));
+	  // printf("finished sim_psums \n");
 
           SET_2_KERNEL_ARGS(add_psums_knl, a_psums_buf, a_net_buf);
           SET_LOCAL_ARG(add_psums_knl, 2, Nsim_loc*sizeof(cl_double));
@@ -566,6 +568,7 @@ int main(int argc, char **argv)
 
           read_dbuf(queue, a_net_buf, a_net, 1);
           CALL_CL_GUARDED(clFinish, (queue));
+	  // printf("finished add_psums \n");
 
           if (fabs(*a_net) > tol)
             {
@@ -577,7 +580,8 @@ int main(int argc, char **argv)
           else
             cleared = 1;
 
-          printf("iteration %d: q_lb = %g, q_ub = %g \n", iter, q_lb, q_ub);
+	  if (tt >= 20)
+	    printf("tt = %d, iteration %d: q_lb = %g, q_ub = %g, a_net = %g \n", tt, iter, q_lb, q_ub, *a_net);
 
         }
 
@@ -590,6 +594,7 @@ int main(int argc, char **argv)
                           (queue, sim_update_knl, /*dimension*/ 1,
                            NULL, gdim_sim, ldim_sim, 0, NULL, NULL));
           CALL_CL_GUARDED(clFinish, (queue));
+	  // printf("finished sim_update \n");
         }
     }
 
@@ -629,8 +634,6 @@ int main(int argc, char **argv)
   free(P);
   free(done_start);
   free(done_end);
-  free(c_sim);
-  free(q_t);
 
   free(x_sim);
   free(y_sim);

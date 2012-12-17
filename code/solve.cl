@@ -46,7 +46,7 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 
   int ix, jx, kx, jq;
   double x_next, q_next, b_x, b_q,
-    x_i, c_i, EV_i, V_i, y_i, err_i;
+    x_i, q_i, c_i, EV_i, V_i, y_i, err_i, c_min;
 
   int2 bnds;
 
@@ -64,6 +64,8 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   local int done_loc;
   if (lx == 0 && gs == 0)
     done_loc = 1;
+
+  q_i = q_grid[gq];
 
   barrier(CLK_LOCAL_MEM_FENCE);
 
@@ -148,8 +150,8 @@ kernel void solve_iter(global double* c_all, global double* V_all,
           EdU_loc[NS*lx + gs] += P[NS*is + gs]*dU_next_loc[NS*lx + is];
         }
 
-      c_endog_loc[NS*lx + gs] = pow(bet*EdU_loc[NS*lx + gs]/q_grid[gq], -1/gam);
-      x_endog_loc[NS*lx + gs] = c_endog_loc[NS*lx + gs] + x_grid[gx]*q_grid[gq] - y_i;
+      c_endog_loc[NS*lx + gs] = pow(bet*EdU_loc[NS*lx + gs]/q_i, -1/gam);
+      x_endog_loc[NS*lx + gs] = c_endog_loc[NS*lx + gs] + x_grid[gx]*q_i - y_i;
 
       /*
         if ((get_group_id(0) == 0) && gq == 0 && gs == 0)
@@ -190,7 +192,7 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   for (int iblk = 0; iblk < NX_BLKS; ++iblk)
     {
 
-      ix = iblk*NX_LOC + lx;      
+      ix = iblk*NX_LOC + lx;
       if (ix < NX)
         {
           x_i = x_grid[ix];
@@ -211,7 +213,8 @@ kernel void solve_iter(global double* c_all, global double* V_all,
             {
               b_x = (x_i - x_min)/(x_endog_loc[gs] - x_min);
 
-              c_i = y_i + b_x*(c_endog_loc[gs] - y_i);
+	      c_min = y_i + (1 - q_i)*x_min;
+              c_i = c_min + b_x*(c_endog_loc[gs] - c_min);
               EV_i = EV_loc[gs];
               V_i = pow(c_i, 1-gam)/(1-gam) + bet*EV_i;
 
@@ -303,7 +306,7 @@ kernel void sim_psums(global double* x_sim, constant double* y_sim,
   int lsim = get_local_id(0);
 
   /*
-  if (gsim == 0)
+    if (gsim == 0)
     printf("q = %g, tt = %d \n", q, tt);
   */
 
@@ -314,13 +317,28 @@ kernel void sim_psums(global double* x_sim, constant double* y_sim,
   jq = (NQ - 1)*(q - q_min)/(q_max - q_min);
   js = NE*z_sim[tt] + e_sim[NSIM*tt + gsim];
 
+  /*
+    if (tt >= 20)
+    printf("worker %d: x = %g, jx = %d, jq = %d, js = %d \n", lsim, x, jx, jq, js);
+  */
+
   b_x = (x - x_grid[jx])/(x_grid[jx+1] - x_grid[jx]);
   b_q = (q - q_grid[jq])/(q_grid[jq+1] - q_grid[jq]);
+
+  /*
+    if (tt >= 20)
+    printf("worker %d: x = %g, jx = %d, b_x = %g, b_q = %g \n", lsim, x, jx, b_x, b_q);
+  */
 
   c = interp2(c_all, b_x, b_q, jx, jq, js);
   a = x + y - c;
 
   a_psums_loc[lsim] = a;
+
+  /*
+    if (tt >= 20)
+    printf("worker %d starting reduction \n", lsim);
+  */
 
   barrier(CLK_LOCAL_MEM_FENCE);
   for (int ii = NSIM_LOC/2; ii > 0; ii >>= 1)
@@ -398,11 +416,12 @@ kernel void sim_update(global double* x_sim, constant double* y_sim,
   b_q = (q - q_grid[jq])/(q_grid[jq+1] - q_grid[jq]);
 
   c = interp2(c_all, b_x, b_q, jx, jq, js);
-  a = x + y - c;
+  a = max(x + y - c, q*x_min);
 
   x_sim[NSIM*(tt+1) + gsim] = a/q;
 
-  printf("x = %g, y = %g, c = %g, a = %g \n", x, y, c, a);
+  if (tt >= 20)
+    printf("x = %g, y = %g, c = %g, a = %g \n", x, y, c, a);
 
   return;
 }
