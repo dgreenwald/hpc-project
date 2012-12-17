@@ -63,7 +63,7 @@ cl_double* getP(double u_b, double u_g, double dur_b, double dur_g, double udur_
 }
 
 // Allocates double buffer
-cl_mem alloc_buf(cl_context ctx, cl_int N, int read, int write)
+cl_mem alloc_dbuf(cl_context ctx, cl_int N, int read, int write)
 {
   cl_mem_flags flag;
   cl_int status;
@@ -74,15 +74,15 @@ cl_mem alloc_buf(cl_context ctx, cl_int N, int read, int write)
   else if (write == 1)
     flag = CL_MEM_WRITE_ONLY;
   else
-    { perror("bad flags in alloc_buf"); abort(); }
+    { perror("bad flags in alloc_dbuf"); abort(); }
 
   cl_mem buf = clCreateBuffer(ctx, flag, N*sizeof(cl_double), 0, &status);
   CHECK_CL_ERROR(status, "clCreateBuffer");
   return buf;
 }
 
-// Write to buffer
-void write_buf(cl_command_queue queue, cl_mem buf, const cl_double *arr, cl_int N)
+// Write to double buffer
+void write_dbuf(cl_command_queue queue, cl_mem buf, const cl_double *arr, cl_int N)
 {
 
   CALL_CL_GUARDED(clEnqueueWriteBuffer,
@@ -92,13 +92,54 @@ void write_buf(cl_command_queue queue, cl_mem buf, const cl_double *arr, cl_int 
   return;
 }
 
-// Read from buffer
-void read_buf(cl_command_queue queue, cl_mem buf, cl_double *arr, cl_int N)
+// Read from double buffer
+void read_dbuf(cl_command_queue queue, cl_mem buf, cl_double *arr, cl_int N)
 {
 
   CALL_CL_GUARDED(clEnqueueReadBuffer,
                   (queue, buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
                    N*sizeof(cl_double), arr,
+                   0, NULL, NULL));
+  return;
+}
+
+// Allocates int buffer
+cl_mem alloc_ibuf(cl_context ctx, cl_int N, int read, int write)
+{
+  cl_mem_flags flag;
+  cl_int status;
+  if (read == 1 && write == 1)
+    flag = CL_MEM_READ_WRITE;
+  else if (read == 1)
+    flag = CL_MEM_READ_ONLY;
+  else if (write == 1)
+    flag = CL_MEM_WRITE_ONLY;
+  else
+    { perror("bad flags in alloc_dbuf"); abort(); }
+
+  cl_mem buf = clCreateBuffer(ctx, flag, N*sizeof(cl_int), 0, &status);
+  CHECK_CL_ERROR(status, "clCreateBuffer");
+  return buf;
+}
+
+// Write to int buffer
+void write_ibuf(cl_command_queue queue, cl_mem buf, const cl_int *arr, cl_int N)
+{
+
+  CALL_CL_GUARDED(clEnqueueWriteBuffer,
+                  (queue, buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
+                   N*sizeof(cl_int), arr,
+                   0, NULL, NULL));
+  return;
+}
+
+// Read from int buffer
+void read_ibuf(cl_command_queue queue, cl_mem buf, cl_int *arr, cl_int N)
+{
+
+  CALL_CL_GUARDED(clEnqueueReadBuffer,
+                  (queue, buf, /*blocking*/ CL_FALSE, /*offset*/ 0,
+                   N*sizeof(cl_int), arr,
                    0, NULL, NULL));
   return;
 }
@@ -120,7 +161,7 @@ int main(int argc, char **argv)
   cl_int status;
 
   char* knl_text;
-  cl_kernel knl;
+  cl_kernel solve_iter_knl;
 
   // create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
   // create_context_on("Intel", NULL, 0, &ctx, &queue, 0);
@@ -134,8 +175,8 @@ int main(int argc, char **argv)
   const cl_double alp = 0.36;
   const cl_double gam = 2.0;
   const cl_double bet = pow(0.95, 1/freq);
-  const cl_double q_min = pow(0.8, 1/freq);
-  const cl_double q_max = pow(1.25, 1/freq);
+  const cl_double q_min = 0.5;
+  const cl_double q_max = 1.4;
   const cl_double x_min = -10;
   const cl_double x_max = 100;
   const cl_int Nx = 8;
@@ -150,8 +191,10 @@ int main(int argc, char **argv)
   const cl_int Ne = 2;
   const cl_int Ns = Nz*Ne;
   const cl_int Npar = 8;
-  const cl_int Nsim = 100; // Number of simulated agents
-  const cl_int Nt = 100; // Number of periods for simulation
+  const cl_int Nsim = 16;
+  const cl_int Nsim_loc = 16;
+  const cl_int Ngrps_sim = (Nsim - 1)/Nsim_loc + 1;
+  const cl_int Nt = 20;
 
   cl_double* x_grid = poly_grid(x_min, x_max, k, Nx);
   cl_double* q_grid = poly_grid(q_min, q_max, 1.0, Nq); // 1.0 for even grid
@@ -169,6 +212,12 @@ int main(int argc, char **argv)
   const cl_double rat_gb = 1.25;
 
   cl_double *P = getP(u_b, u_g, dur_b, dur_g, udur_b, udur_g, rat_bg, rat_gb);
+
+  cl_double Pz[2][2];
+  Pz[0][0] = 1 - 1/dur_b;
+  Pz[0][1] = 1/dur_b;
+  Pz[1][1] = 1 - 1/dur_g;
+  Pz[1][0] = 1/dur_g;
 
   /* // Outputting P matrix
      for (int ii = 0; ii < Ns; ++ii)
@@ -202,10 +251,10 @@ int main(int argc, char **argv)
   cl_double* params = malloc(Npar*sizeof(cl_double));
   if (!params) { perror("alloc params"); abort(); }
 
-  cl_double *done_start = malloc(sizeof(cl_double));
+  cl_int *done_start = malloc(sizeof(cl_int));
   if (!done_start) { perror("alloc done_start"); abort(); }
 
-  cl_double *done_end = malloc(sizeof(cl_double));
+  cl_int *done_end = malloc(sizeof(cl_int));
   if (!done_end) { perror("alloc done_end"); abort(); }
 
   // Initialize Matrices
@@ -236,8 +285,8 @@ int main(int argc, char **argv)
   params[6] = k;
   params[7] = tol;
 
-  done_start[0] = 1.0;
-  done_end[0] = 0.0;
+  done_start[0] = 1;
+  done_end[0] = 0;
 
   /*
     printf("before kernel \n");
@@ -249,56 +298,57 @@ int main(int argc, char **argv)
 
   // Allocate device buffers
 
-  cl_mem c_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1);
-  cl_mem V_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1);
-  cl_mem V_old_buf = alloc_buf(ctx, Nx*Nq*Ns, 1, 1);
-  cl_mem x_buf = alloc_buf(ctx, Nx, 1, 0);
-  cl_mem q_buf = alloc_buf(ctx, Nq, 1, 0);
-  cl_mem y_buf = alloc_buf(ctx, Ns, 1, 0);
-  cl_mem P_buf = alloc_buf(ctx, Ns*Ns, 1, 0);
-  cl_mem q_bar_buf = alloc_buf(ctx, Nz, 1, 0);
-  cl_mem params_buf = alloc_buf(ctx, Npar, 1, 0);
-  cl_mem done_buf = alloc_buf(ctx, 1, 1, 1);
+  cl_mem c_buf = alloc_dbuf(ctx, Nx*Nq*Ns, 1, 1);
+  cl_mem V_buf = alloc_dbuf(ctx, Nx*Nq*Ns, 1, 1);
+  cl_mem V_old_buf = alloc_dbuf(ctx, Nx*Nq*Ns, 1, 1);
+  cl_mem x_buf = alloc_dbuf(ctx, Nx, 1, 0);
+  cl_mem q_buf = alloc_dbuf(ctx, Nq, 1, 0);
+  cl_mem y_buf = alloc_dbuf(ctx, Ns, 1, 0);
+  cl_mem P_buf = alloc_dbuf(ctx, Ns*Ns, 1, 0);
+  cl_mem q_bar_buf = alloc_dbuf(ctx, Nz, 1, 0);
+  cl_mem params_buf = alloc_dbuf(ctx, Npar, 1, 0);
+  cl_mem done_buf = alloc_ibuf(ctx, 1, 1, 1);
 
   // Transfer to device
 
-  write_buf(queue, c_buf, c_all, Nx*Nq*Ns);
-  write_buf(queue, V_buf, V_all, Nx*Nq*Ns);
-  write_buf(queue, V_old_buf, V_old, Nx*Nq*Ns);
-  write_buf(queue, x_buf, x_grid, Nx);
-  write_buf(queue, q_buf, q_grid, Nq);
-  write_buf(queue, y_buf, y_grid, Ns);
-  write_buf(queue, P_buf, P, Ns*Ns);
-  write_buf(queue, q_bar_buf, q_bar, Nz);
-  write_buf(queue, params_buf, params, Npar);
+  write_dbuf(queue, c_buf, c_all, Nx*Nq*Ns);
+  write_dbuf(queue, V_buf, V_all, Nx*Nq*Ns);
+  write_dbuf(queue, V_old_buf, V_old, Nx*Nq*Ns);
+  write_dbuf(queue, x_buf, x_grid, Nx);
+  write_dbuf(queue, q_buf, q_grid, Nq);
+  write_dbuf(queue, y_buf, y_grid, Ns);
+  write_dbuf(queue, P_buf, P, Ns*Ns);
+  write_dbuf(queue, q_bar_buf, q_bar, Nz);
+  write_dbuf(queue, params_buf, params, Npar);
 
-  CALL_CL_GUARDED(clFinish, (queue));
+  // CALL_CL_GUARDED(clFinish, (queue));
 
   // Run solve.cl on device
 
   knl_text = read_file("solve.cl");
   char buildOptions[200];
-  sprintf(buildOptions, "-DNX=%d -DNX_LOC=%d -DNX_PAD=%d -DNX_TOT=%d -DNX_BLKS=%d -DNQ=%d -DNS=%d"
-	  " -DNSIM = %d -DNT",
-          Nx, Nx_loc, Nx_pad, Nx_tot, Nx_blks, Nq, Ns, Nsim, Nt);
+  sprintf(buildOptions, "-DNX=%d -DNX_LOC=%d -DNX_PAD=%d -DNX_TOT=%d -DNX_BLKS=%d -DNQ=%d -DNZ=%d -DNE=%d -DNS=%d"
+          " -DNSIM=%d -DNSIM_LOC=%d -DNT=%d -DNGRPS_SIM=%d",
+          Nx, Nx_loc, Nx_pad, Nx_tot, Nx_blks, Nq, Nz, Ne, Ns, Nsim, Nsim_loc, Nt, Ngrps_sim);
+
   // knl = kernel_from_string(ctx, knl_text, "solve", buildOptions);
   cl_program prg = program_from_string(ctx, knl_text, buildOptions);
-  knl = clCreateKernel(prg, "solve_iter", &status);
-  CHECK_CL_ERROR(status, "clCreateKernel");
-
   free(knl_text);
+
+  solve_iter_knl = clCreateKernel(prg, "solve_iter", &status);
+  CHECK_CL_ERROR(status, "clCreateKernel");
 
   get_timestamp(&time1);
 
   // Add global arguments
   int n_arg = 10;
   int n_loc = 6;
-  SET_10_KERNEL_ARGS(knl, c_buf, V_buf, V_old_buf, x_buf, q_buf, y_buf,
+  SET_10_KERNEL_ARGS(solve_iter_knl, c_buf, V_buf, V_old_buf, x_buf, q_buf, y_buf,
                      P_buf, q_bar_buf, params_buf, done_buf);
   // Add local arguments
   for (int ii = n_arg; ii < n_arg + n_loc; ++ii)
     {
-      SET_LOCAL_ARG(knl, ii, Nx_loc*Ns*sizeof(cl_double));
+      SET_LOCAL_ARG(solve_iter_knl, ii, Nx_loc*Ns*sizeof(cl_double));
     }
 
   size_t ldim[3] = {Nx_loc, 1, Ns};
@@ -311,76 +361,260 @@ int main(int argc, char **argv)
 
   // Iterate to convergence
   int iter = 0;
-  while (done_end[0] < 0.5)
+  while (done_end[0] == 0)
     {
       ++iter;
-      write_buf(queue, done_buf, done_start, 1);
+      write_ibuf(queue, done_buf, done_start, 1);
 
-      CALL_CL_GUARDED(clFinish, (queue));
+      // CALL_CL_GUARDED(clFinish, (queue));
 
       CALL_CL_GUARDED(clEnqueueNDRangeKernel,
-                      (queue, knl, /*dimension*/ 3,
+                      (queue, solve_iter_knl, /*dimension*/ 3,
                        NULL, gdim, ldim, 0, NULL, NULL));
 
       CALL_CL_GUARDED(clFinish, (queue));
 
       // Transfer from device
-      read_buf(queue, done_buf, done_end, 1);
+      read_ibuf(queue, done_buf, done_end, 1);
     }
-
-  clReleaseKernel(knl); // Release kernel
 
   get_timestamp(&time2);
   elapsed = timestamp_diff_in_seconds(time1,time2);
   printf("Time elapsed: %f s\n", elapsed);
   printf("%d iterations to convergence \n", iter);
 
-  read_buf(queue, c_buf, c_all, Nx*Nq*Ns);
-  read_buf(queue, V_buf, V_all, Nx*Nq*Ns);
-  read_buf(queue, V_old_buf, V_old, Nx*Nq*Ns);
+  read_dbuf(queue, c_buf, c_all, Nx*Nq*Ns);
+  read_dbuf(queue, V_buf, V_all, Nx*Nq*Ns);
+  read_dbuf(queue, V_old_buf, V_old, Nx*Nq*Ns);
 
   CALL_CL_GUARDED(clFinish, (queue));
-
-  printf("after kernel \n");
-  for (int ix = 0; ix < Nx; ++ix)
+  /*
+    printf("after kernel \n");
+    for (int ix = 0; ix < Nx; ++ix)
     for (int iq = 0; iq < Nq; ++iq)
-      for (int is = 0; is < Ns; ++is)
-        printf("(%d, %d, %d): c = %g, V = %g, V_old = %g \n",
-               ix, iq, is, c_all[Ns*(Nq*ix + iq) + is], V_all[Ns*(Nq*ix + iq) + is],
-               V_old[Ns*(Nq*ix + iq) + is]);
+    for (int is = 0; is < Ns; ++is)
+    if (iq == 0 && is == 0)
+    printf("(%d, %d, %d): c = %g, V = %g, V_old = %g \n",
+    ix, iq, is, c_all[Ns*(Nq*ix + iq) + is], V_all[Ns*(Nq*ix + iq) + is],
+    V_old[Ns*(Nq*ix + iq) + is]);
+  */
 
-  // V_old no longer needed
   CALL_CL_GUARDED(clReleaseMemObject, (V_old_buf));
   free(V_old);
 
-  /**********************************************
-   ** SIMULATION CODE
-  **********************************************/
+  // Allocate simulation memory
 
-  // Allocate host memory
-  cl_double *c_sim = malloc(sizeof(cl_double) * Nsim * Nt);
-   if (!c_sim) { perror("alloc c_sim"); abort(); }
+  cl_double *x_sim = malloc(sizeof(cl_double) * Nsim * Nt);
+  if (!x_sim) { perror("alloc x_sim"); abort(); }
 
-  cl_double *q_t = malloc(sizeof(cl_double));
-   if (!q_t) { perror("alloc q_t"); abort(); }  
+  cl_double *y_sim = malloc(sizeof(cl_double) * Nsim * Nt);
+  if (!y_sim) { perror("alloc y_sim"); abort(); }
 
-   // Allocate device memory
-   cl_mem c_sim_buf = alloc_buf(ctx, Nsim*Nt, 1, 1);
-   cl_mem q_t_buf = alloc_buf(ctx, 1, 1, 1);   
+  int *z_sim = malloc(sizeof(int) * Nt);
+  if (!z_sim) { perror("alloc z_sim"); abort(); }
+
+  int *e_sim = malloc(sizeof(int) * Nsim * Nt);
+  if (!e_sim) { perror("alloc e_sim"); abort(); }
+
+  cl_double *a_net = malloc(sizeof(cl_double));
+  if (!a_net) { perror("alloc a_sim"); abort(); }
+
+  // Allocate device memory
+  cl_mem x_sim_buf = alloc_dbuf(ctx, Nsim*Nt, 1, 1);
+  cl_mem y_sim_buf = alloc_dbuf(ctx, Nsim*Nt, 1, 0);
+  cl_mem a_psums_buf = alloc_dbuf(ctx, Ngrps_sim, 1, 1);
+  cl_mem a_net_buf = alloc_dbuf(ctx, 1, 1, 1);
+
+  cl_mem z_sim_buf = alloc_ibuf(ctx, Nt, 1, 0);
+  cl_mem e_sim_buf = alloc_ibuf(ctx, Nsim*Nt, 1, 0);
+
+  // Initialize arrays
+  double draw;
+  for (int tt = 0; tt < Nt; ++tt)
+    {
+      if (tt > 0)
+        {
+          draw = ((double) rand())/((double) RAND_MAX);
+          if (draw <= Pz[z_sim[tt-1]][0])
+            z_sim[tt] = 0;
+          else
+            z_sim[tt] = 1;
+	  printf("z_sim[%d] = %d \n", tt, z_sim[tt]);
+          // printf("t = %d, draw = %g, P[.][0] = %g, z_sim = %d \n", tt, draw, Pz[z_sim[tt-1]][0], z_sim[tt]);
+        }
+      else
+        {
+          z_sim[tt] = 1;
+        }
+    }
+
+  double Pe[Ne][Ne];
+  for (int tt = 0; tt < Nt; ++tt)
+    {
+      if (tt > 0)
+        {
+          for (int ie = 0; ie < Ne; ++ie)
+            {
+              for (int je = 0; je < Ne; ++je)
+                {
+                  Pe[ie][je] = P[Ns*(Ne*z_sim[tt] + je) + Ne*z_sim[tt-1] + ie]/Pz[z_sim[tt-1]][z_sim[tt]];
+                  // printf("t = %d, Pe[%d][%d] = %g \n", tt, ie, je, Pe[ie][je]);
+                }
+            }
+          for (int ii = 0; ii < Nsim; ++ii)
+            {
+              draw = ((double) rand())/((double) RAND_MAX);
+              if (draw <= Pe[e_sim[Nsim*(tt-1) + ii]][0])
+                {
+                  e_sim[Nsim*tt + ii] = 0;
+                }
+              else
+                {
+                  e_sim[Nsim*tt + ii] = 1;
+                }
+              y_sim[Nsim*tt + ii] = y_grid[Ne*z_sim[tt] + e_sim[Nsim*tt + ii]];
+              /*
+                printf("t = %d, i = %d, draw = %g, e_sim = %d, y_sim = %g \n",
+                tt, ii, draw, e_sim[Nsim*tt + ii], y_sim[Nsim*tt + ii]);
+              */
+            }
+        }
+      else
+        {
+          for (int ii = 0; ii < Nsim; ++ii)
+            {
+              e_sim[Nsim*tt + ii] = 1;
+              y_sim[Nsim*tt + ii] = y_grid[Ne*z_sim[tt] + e_sim[Nsim*tt + ii]];
+              /*
+                printf("t = %d, i = %d, draw = %g, e_sim = %d, y_sim = %g \n",
+                tt, ii, draw, e_sim[Nsim*tt + ii], y_sim[Nsim*tt + ii]);
+              */
+            }
+        }
+    }
+
+  for (int ii = 0; ii < Nsim; ++ii)
+    {
+      x_sim[ii] = 0.0;
+    }
+
+  // Transfer to device
+  write_dbuf(queue, x_sim_buf, x_sim, Nsim*Nt);
+  write_dbuf(queue, y_sim_buf, y_sim, Nsim*Nt);
+  write_ibuf(queue, z_sim_buf, z_sim, Nt);
+  write_ibuf(queue, e_sim_buf, e_sim, Nsim*Nt);
+
+  // Run simulation
+  int cleared;
+  double q_lb, q_ub, q_mid;
+
+  // sim_psums kernel
+  size_t ldim_sim[] = {Nsim_loc};
+  size_t gdim_sim[] = {Nsim_loc*((Nsim-1)/Nsim_loc + 1)};
+
+  cl_kernel sim_psums_knl = clCreateKernel(prg, "sim_psums", &status);
+  CHECK_CL_ERROR(status, "clCreateKernel");
+
+  // add_psums kernel
+  size_t ldim_add[] = {Nsim_loc};
+  size_t gdim_add[] = {Nsim_loc};
+
+  cl_kernel add_psums_knl = clCreateKernel(prg, "add_psums", &status);
+  CHECK_CL_ERROR(status, "clCreateKernel");
+
+  // sim_psums kernel
+
+  cl_kernel sim_update_knl = clCreateKernel(prg, "sim_update", &status);
+  CHECK_CL_ERROR(status, "clCreateKernel");
+
+  // Launch kernels
+
+
+  for (int tt = 0; tt < Nt; ++tt)
+    {
+      cleared = 0;
+      iter = 0;
+
+      q_lb = q_min;
+      q_ub = q_max;
+      // printf("\n iteration %d: q_lb = %g, q_ub = %g \n", 0, q_lb, q_ub);
+
+      while (cleared == 0)
+        {
+          ++iter;
+
+	  q_mid = 0.5*(q_lb + q_ub);
+
+          SET_11_KERNEL_ARGS(sim_psums_knl, x_sim_buf, y_sim_buf, z_sim_buf, e_sim_buf,
+                             c_buf, params_buf, x_buf, q_buf, a_psums_buf, q_mid, tt);
+          SET_LOCAL_ARG(sim_psums_knl, 11, Nsim_loc*sizeof(cl_double));
+
+          CALL_CL_GUARDED(clFinish, (queue));
+
+          CALL_CL_GUARDED(clEnqueueNDRangeKernel,
+                          (queue, sim_psums_knl, /*dimension*/ 1,
+                           NULL, gdim_sim, ldim_sim, 0, NULL, NULL));
+
+          CALL_CL_GUARDED(clFinish, (queue));
+
+          SET_2_KERNEL_ARGS(add_psums_knl, a_psums_buf, a_net_buf);
+          SET_LOCAL_ARG(add_psums_knl, 2, Nsim_loc*sizeof(cl_double));
+
+          CALL_CL_GUARDED(clEnqueueNDRangeKernel,
+                          (queue, add_psums_knl, /*dimension*/ 1,
+                           NULL, gdim_sim, ldim_sim, 0, NULL, NULL));
+
+          read_dbuf(queue, a_net_buf, a_net, 1);
+          CALL_CL_GUARDED(clFinish, (queue));
+
+          if (fabs(*a_net) > tol)
+            {
+              if (*a_net > 0)
+                q_lb = q_mid;
+              else
+                q_ub = q_mid;
+            }
+          else
+            cleared = 1;
+
+          printf("iteration %d: q_lb = %g, q_ub = %g \n", iter, q_lb, q_ub);
+
+        }
+
+      if (tt < Nt-1)
+        {
+          SET_10_KERNEL_ARGS(sim_update_knl, x_sim_buf, y_sim_buf, z_sim_buf, e_sim_buf,
+                             c_buf, params_buf, x_buf, q_buf, q_mid, tt);
+
+          CALL_CL_GUARDED(clEnqueueNDRangeKernel,
+                          (queue, sim_update_knl, /*dimension*/ 1,
+                           NULL, gdim_sim, ldim_sim, 0, NULL, NULL));
+          CALL_CL_GUARDED(clFinish, (queue));
+        }
+    }
 
   // Clean up
   CALL_CL_GUARDED(clFinish, (queue));
   CALL_CL_GUARDED(clReleaseMemObject, (c_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (V_buf));
-  // CALL_CL_GUARDED(clReleaseMemObject, (V_old_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (x_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (q_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (y_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (P_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (q_bar_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (done_buf));
-  CALL_CL_GUARDED(clReleaseMemObject, (c_sim_buf));
-  CALL_CL_GUARDED(clReleaseMemObject, (q_t_buf));
+
+  CALL_CL_GUARDED(clReleaseMemObject, (x_sim_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (y_sim_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (a_psums_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (a_net_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (z_sim_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (e_sim_buf));
+
+  CALL_CL_GUARDED(clReleaseKernel, (solve_iter_knl));
+  CALL_CL_GUARDED(clReleaseKernel, (sim_psums_knl));
+  CALL_CL_GUARDED(clReleaseKernel, (add_psums_knl));
+  CALL_CL_GUARDED(clReleaseKernel, (sim_update_knl));
 
   CALL_CL_GUARDED(clReleaseProgram, (prg));
   CALL_CL_GUARDED(clReleaseCommandQueue, (queue));
@@ -388,7 +622,6 @@ int main(int argc, char **argv)
 
   free(c_all);
   free(V_all);
-  // free(V_old);
   free(x_grid);
   free(q_grid);
   free(y_grid);
@@ -398,6 +631,12 @@ int main(int argc, char **argv)
   free(done_end);
   free(c_sim);
   free(q_t);
+
+  free(x_sim);
+  free(y_sim);
+  free(z_sim);
+  free(e_sim);
+  free(a_net);
 
   return 0;
 
