@@ -283,12 +283,12 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   return;
 }
 
-kernel void sim_psums(global double* x_sim, global double* a_sim, constant double* y_sim,
-                         constant int* z_sim, constant int* e_sim,
-                         global double* c_all, constant double* params,
-                         constant double* x_grid, constant double* q_grid, global double* a_psums,
-                         double q, int tt,
-                         local double* a_psums_loc)
+kernel void sim_psums(global double* x_sim, constant double* y_sim,
+                      constant int* z_sim, constant int* e_sim,
+                      global double* c_all, constant double* params,
+                      constant double* x_grid, constant double* q_grid, global double* a_psums,
+                      double q, int tt,
+                      local double* a_psums_loc)
 {
   double x, y, a, c, b_x, b_q;
   int jx, jq, js;
@@ -305,8 +305,10 @@ kernel void sim_psums(global double* x_sim, global double* a_sim, constant doubl
   int gsim = get_global_id(0);
   int lsim = get_local_id(0);
 
+  /*
   if (gsim == 0)
     printf("q = %g, tt = %d \n", q, tt);
+  */
 
   x = x_sim[NSIM*tt + gsim];
   y = y_sim[NSIM*tt + gsim];
@@ -320,7 +322,6 @@ kernel void sim_psums(global double* x_sim, global double* a_sim, constant doubl
 
   c = interp2(c_all, b_x, b_q, jx, jq, js);
   a = x + y - c;
-  // printf("x = %g, y = %g, c = %g, a = %g \n", x, y, c, a);
 
   a_psums_loc[lsim] = a;
 
@@ -334,35 +335,77 @@ kernel void sim_psums(global double* x_sim, global double* a_sim, constant doubl
 
   if (lsim == 0)
     {
-      printf("group %d, a_psum = %g \n", get_group_id(0), a_psums_loc[0]);
+      // printf("group %d, a_psum = %g \n", get_group_id(0), a_psums_loc[0]);
       a_psums[get_group_id(0)] = a_psums_loc[0];
     }
 
   return;
 }
 
-kernel void add_psums(global double* a_psums, global double* a_net, 
-		      local double* a_psums_loc)
+kernel void add_psums(global double* psums, global double* sum,
+                      local double* psums_loc)
 {
   int lsim = get_local_id(0);
-  
+
   if (lsim < NGRPS_SIM)
-    a_psums_loc[lsim] = a_psums[lsim];
+    psums_loc[lsim] = psums[lsim];
   else
-    a_psums_loc[lsim] = 0;
+    psums_loc[lsim] = 0;
 
   barrier(CLK_LOCAL_MEM_FENCE);
   for (int ii = NSIM_LOC/2; ii > 0; ii >>= 1)
     {
       if (lsim < ii)
-        a_psums_loc[lsim] += a_psums_loc[lsim + ii];
+        psums_loc[lsim] += psums_loc[lsim + ii];
       barrier(CLK_LOCAL_MEM_FENCE);
     }
 
   if (lsim == 0)
     {
-      *a_net = a_psums_loc[0];
-      printf("a_net = %g \n", *a_net);    
+      *sum = psums_loc[0];
+      // printf("sum = %g \n", *sum);
     }
 
+}
+
+kernel void sim_update(global double* x_sim, constant double* y_sim,
+                       constant int* z_sim, constant int* e_sim,
+                       global double* c_all, constant double* params,
+                       constant double* x_grid, constant double* q_grid,
+                       double q, int tt)
+{
+  double x, y, a, c, b_x, b_q;
+  int jx, jq, js;
+
+  double x_min = params[2];
+  double x_max = params[3];
+  double q_min = params[4];
+  double q_max = params[5];
+  double kk = params[6];
+  // double tol = params[7];
+
+  int gsim = get_global_id(0);
+  int lsim = get_local_id(0);
+
+  if (gsim == 0)
+    printf("q = %g, tt = %d, z = %d \n", q, tt, z_sim[tt]);
+
+  x = x_sim[NSIM*tt + gsim];
+  y = y_sim[NSIM*tt + gsim];
+
+  jx = (NX - 1)*pow((x - x_min)/(x_max - x_min), kk);
+  jq = (NQ - 1)*(q - q_min)/(q_max - q_min);
+  js = NE*z_sim[tt] + e_sim[NSIM*tt + gsim];
+
+  b_x = (x - x_grid[jx])/(x_grid[jx+1] - x_grid[jx]);
+  b_q = (q - q_grid[jq])/(q_grid[jq+1] - q_grid[jq]);
+
+  c = interp2(c_all, b_x, b_q, jx, jq, js);
+  a = x + y - c;
+
+  x_sim[NSIM*(tt+1) + gsim] = a/q;
+
+  printf("x = %g, y = %g, c = %g, a = %g \n", x, y, c, a);
+
+  return;
 }
