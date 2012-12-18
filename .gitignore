@@ -12,6 +12,7 @@ _*
 *.mat
 *.o
 *.old
+*.txt
 solve
 solve_float
 print-devices

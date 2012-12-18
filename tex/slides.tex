@@ -1,0 +1,204 @@
+
+\documentclass[handout]{beamer}
+% \documentclass{beamer}
+
+\usetheme{Frankfurt}
+\usecolortheme{seahorse}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{amsfonts}
+% \usepackage{changepage}
+\usepackage{mathtools}
+\usepackage{graphicx}
+\usepackage[final]{pdfpages}
+
+\newcommand{\sumn}{\sum_{i=1}^{n}}
+\newcommand{\sumt}{\sum_{t=0}^\infty}
+\newcommand{\fsum}{\frac{1}{n} \sum_{i=1}^n}
+\newcommand{\prodn}{\prod_{i=1}^{n}}
+\newcommand{\intf}{\int_{-\infty}^{\infty}}
+\newcommand{\intz}{\int_0^\infty}
+\newcommand{\limf}{\lim_{n\to \infty}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\bp}{\mathbb{P}}
+\newcommand{\cf}{\mathcal{F}}
+\newcommand{\Var}{\text{Var}}
+\newcommand{\Cov}{\text{Cov}}
+\newcommand{\topr}{\xrightarrow{  p  }}
+\newcommand{\tod}{\xrightarrow{  d  }}
+\newcommand{\blambda}{\bar{\lambda}}
+\newcommand{\htheta}{\hat{\theta}}
+\newcommand{\eps}{\varepsilon}
+\newcommand{\tick}{[<+->]}
+\newcommand{\cond}{ \; \Bigr| \; }
+\newcommand{\maxtil}{ \widetilde{\max} }
+
+\allowdisplaybreaks[1]
+
+\theoremstyle{definition}
+\newtheorem{thm}{Theorem}
+% \newtheorem*{claim}{Claim}
+\newtheorem{prop}[thm]{Proposition}
+\newtheorem*{defn}{Definition}
+% \newtheorem*{cor}{Corollary}
+% \newtheorem*{ex}{Example}
+% \newtheorem*{exer}{Exercise}
+% \newtheorem{lem}[thm]{Lemma}
+% \newtheorem{ob}{Observation}
+% \newtheorem*{fact}{Fact}
+
+% Outline:
+
+% 1. Economic/computational motivation.
+
+% a. Borrowing constraints, uninsurable income risk, market incompleteness are important for understanding economic behavior.
+% b. But in this case, macroeconomic (aggregate) outcomes depend on the entire distribution of agents.
+% c. Need to solve numerically, typically by simulating the behavior of large numbers of agents, and setting prices to ensure market clearing.
+% d. Computationally expensive problem, well-suited to parallelization.
+% e. Solution of optimal policy problem also computationally expensive well-suited to parallelization.
+
+% 2. Outline of problem.
+
+% a. Agent's problem
+% b. State space
+% c. Stochastic processes
+% d. Assumed values for q (qbar)
+% e. Endogenous grid method.
+
+% 3. Walk through solution.
+
+% a. Solution objects: functions as arrays.
+% b. Work group: Nx_loc x 1 x Ns
+% c. Check if done.
+% d. Evaluating expectations/bilinear interpolation (local memory).
+% e. Endogenous grid.
+% f. Return to good grid, linear interpolation/bisection (local memory).
+
+% 4. Walk through simulation.
+
+% a. Objects: simulations for many agents.
+% b. Simulate exogenous processes on the host.
+% c. Evaluate agents' policy using bilinear interpolation.
+% d. Add asset holdings through reduction (local memory)
+% e. Iterate to convergence on q in each period.
+% f. Update and repeat.
+
+% 5. Overall loop to convergence over qbar
+
+\title{Agent-Based Economic Models in OpenCL}
+\author{Dan Greenwald and Kevin Mullin}
+\date{\today}
+
+\begin{document}
+
+\small
+
+\frame{\titlepage}
+
+\section{Introduction}
+
+\begin{frame}
+  \frametitle{Introduction}
+  \begin{itemize}[<+->]
+  \item Traditional macroeconomics assumes perfect insurance and asset markets to make sure that economic activity only depends on aggregate variables.
+  \item However, borrowing constraints, uninsurable income risk, and market incompleteness are important features for understanding economic behavior.
+  \item Relaxing these simplifying assumptions is difficult, because economic activity now depends on the entire distribution of agents' states --- requires large scale simulations to solve.
+  \item Solution of optimal policy and simulation can be computationally expensive problems in this type of model, but are well suited to parallelization.
+  \item Huge performance improvements on the GPU using OpenCL.
+  \end{itemize}
+\end{frame}
+
+\section{Model}
+
+\begin{frame}
+  \frametitle{Agent's Problem}
+  \begin{itemize}[<+->]
+  \item Each infinitely-lived agent (indexed by $i$) maximizes
+    \[ V(\theta_{it}) = \E_t \sum_{j=0}^\infty \beta^j u(c_{i,t+j}(\theta_{i,t+j})) \]
+    at each time $t$.
+    \begin{itemize}[<+->]
+    \item $\theta_{i,t+j}$: state of the world at time $t+j$.
+    \item $c_{i,t+j}$: state-contingent consumption plan at time $t+j$.
+    \item $\beta$: discount factor (patience).
+    \item $u$: utility function (enjoyment of consumption).
+    \item $\E_t$: conditional expectation given time $t$ information.
+    \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Environment}
+  \begin{itemize}[<+->]
+  \item The economy can either be in a state of recession $(z_t = 0)$, or expansion $(z_t = 1)$.
+  \item Agents can either be unemployed $(e_{it} = 0)$, or employed $(e_{it} = 1)$.
+  \item Agents earn labor income when employed, and unemployment benefits when unemployed. Wages are higher in expansions than recessions.
+    \begin{itemize}
+    \item Total income given by $y(z_t, e_{it})$.
+    \end{itemize}
+  \item $z_t$ and $e_{it}$ follow a joint Markov chain for each agent, with transition matrix $P$.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Asset Space}
+  \begin{itemize}[<+->]
+  \item Agents can save and borrow from each other risk-free.
+  \item Can think of this as agents holding long (positive) and short (negative) positions in a bond ($b_{it}$) that you buy for some price $(q_t)$ today, and which pays 1 unit of consumption next period.
+  \item Interest rate (equivalently, bond price) is set so that the market clears in each period (total saving equals total borrowing).
+  \item Each agent has the same borrowing limit $-\bar{b}$.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Optimality}
+  \begin{itemize}[<+->]
+  \item Each agent's policy at time $t$ depends on current wealth ($x_{it}$), current bond price $(q_t)$, and current state $s_{it} = (z_t, e_{it})$.
+  \item Optimality condition
+    \[ q_t u'(c_t(x_{it}, q_t, s_{it})) \ge \beta \E_t u'(c_{t+1}(x_{i,t+1}, q_{t+1}, s_{i,t+1})) \]
+    with equality as long as $b_{it} > -\bar{b}$.
+  \item If $u$ is well behaved, then solution $\{c_t\}$ is uniquely defined by this equation.
+  \item Problem: you don't know the distribution of $q_{t+1}$.
+  \item Solution: have agents assume that $q_{t+1} = \tilde{q}(z_{t+1})$. We will want to choose $\tilde{q}(z_{t+1})$ so that it approximates $q_{t+1}$ well (or is at least unbiased).
+  \end{itemize}
+\end{frame}
+
+\section{Computational Method: Solution}
+
+\begin{frame}
+  \frametitle{Solution}
+  \begin{itemize}[<+->]
+  \item Want to solve for optimal consumption policy $c(x, q, s)$.
+  \item Since $x$ and $q$ are continuous variables, this is an infinite-dimensional object, so approximate on a set of gridpoints $(\bar{x}_1, \ldots, \bar{x}_{N_x})$, $(\bar{q}_1, \ldots, \bar{q}_{N_q})$, and use bilinear interpolation between gridpoints.
+  \item Strategy: initialize $c^0$ with some reasonable starting point (i.e., consume all assets), and iterate on
+    \[ q u'(c^{n+1}(x_i, q, s_i)) \ge \beta \sum_{s_i'} P(s_i, s_i') u'(c^n(x_i', q', s_i')) \]
+    until $\max(c^{n+1} - c^n) < \eps$.
+  \end{itemize}
+\end{frame}
+
+
+\begin{frame}
+  \frametitle{Solution Algorithm}
+  \begin{itemize}[<+->]
+  \item Use workgroups of size $(K_x, 1, N_s)$ (recall $N_s = 4$).
+  \item Global index $(i, j, k)$.
+  \item Step 1: calculate $c^n(\bar{x}_i, \tilde{q}(\bar{s}_k), \bar{s}_k)$ in local memory using bilinear interpolation (easy because grid is known).
+  \item Step 2: calculate
+    \[ \E_t c^n | \bar{s}_k = \sum_m P(\bar{s}_k, \bar{s}_m) c^n(\bar{x}_i, \tilde{q}(\bar{s}_m), \bar{s}_m) \]
+    using previous results.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Solution Algorithm}
+  \begin{itemize}[<+->]
+  \item Step 3: invert optimality condition to obtain 
+  \end{itemize}
+\end{frame}
+
+\end{document}
