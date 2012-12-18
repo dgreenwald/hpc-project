@@ -146,7 +146,7 @@ void read_ibuf(cl_command_queue queue, cl_mem buf, cl_int *arr, cl_int N)
   return;
 }
 
-void update_qbar(double* q_bar, double* q_bar_old, const double* q_sim, const int* z_sim, int Nt)
+void update_qbar(double* q_bar, double* q_bar_old, const double* q_sim, const int* z_sim, int Nt, int Nburn)
 {
   int N[2] = {0, 0};
 
@@ -157,7 +157,7 @@ void update_qbar(double* q_bar, double* q_bar_old, const double* q_sim, const in
   // calculate new value
   q_bar[0] = 0;
   q_bar[1] = 0;
-  for (int tt = 0; tt < Nt; ++tt)
+  for (int tt = Nburn; tt < Nt; ++tt)
     {
       if (z_sim[tt] == 0)
         {
@@ -206,18 +206,18 @@ int main(int argc, char **argv)
   const cl_double bet = pow(0.90, 1/freq);
   // const cl_double q_min = 0.9;
   // const cl_double q_max = 1.1;
-  const cl_double q_min = 1/bet - 0.35;
-  const cl_double q_max = 1/bet + 0.35;
+  const cl_double q_min = 1/bet - 0.25;
+  const cl_double q_max = 1/bet + 0.25;
   const cl_double x_min = -0.5;
   const cl_double x_max = 10;
-  const cl_int Nx = 64;
+  const cl_int Nx = 1000;
   const cl_int Nx_loc = 64;
   // const cl_int Nx = 9;
   // const cl_int Nx_loc = 8;
   const cl_int Nx_pad = Nx + (Nx-2)/(Nx_loc-1);
   const cl_int Nx_tot = Nx_loc*((Nx_pad-1)/Nx_loc + 1);
   const cl_int Nx_blks = (Nx-1)/Nx_loc + 1;
-  const cl_int Nq = 8;
+  const cl_int Nq = 50;
   const cl_int Nz = 2;
   const cl_int Ne = 2;
   const cl_int Ns = Nz*Ne;
@@ -225,7 +225,8 @@ int main(int argc, char **argv)
   const cl_int Nsim = 128;
   const cl_int Nsim_loc = 128;
   const cl_int Ngrps_sim = (Nsim - 1)/Nsim_loc + 1;
-  const cl_int Nt = 100;
+  const cl_int Nt = 1200;
+  const cl_int Nburn = 200;
 
   cl_double* x_grid = poly_grid(x_min, x_max, k, Nx);
   cl_double* q_grid = poly_grid(q_min, q_max, 1.0, Nq); // 1.0 for even grid
@@ -672,7 +673,7 @@ int main(int argc, char **argv)
       elapsed = timestamp_diff_in_seconds(time1,time2);
       printf("Simulation routine, time elapsed: %f s\n", elapsed);
 
-      update_qbar(q_bar, q_bar_old, q_sim, z_sim, Nt);
+      update_qbar(q_bar, q_bar_old, q_sim, z_sim, Nt, Nburn);
     }
 
   // CLEAN UP
