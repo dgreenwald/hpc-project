@@ -277,8 +277,8 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 	      */
 
               // write to global memory
-              c_all[NS*(NQ*gx + gq) + gs] = c_i;
-              V_all[NS*(NQ*gx + gq) + gs] = V_i;
+              c_all[NS*(NQ*ix + gq) + gs] = c_i;
+              V_all[NS*(NQ*ix + gq) + gs] = V_i;
             }
         }
     }
