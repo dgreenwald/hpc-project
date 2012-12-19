@@ -501,8 +501,8 @@ cl_int main(cl_int argc, char **argv)
   char* knl_text = read_file("solve.cl");
   char buildOptions[200];
   sprintf(buildOptions, "-DNX=%d -DNX_LOC=%d -DNX_PAD=%d -DNX_TOT=%d -DNX_BLKS=%d -DNQ=%d -DNZ=%d -DNE=%d -DNS=%d"
-          " -DNSIM=%d -DNSIM_LOC=%d -DNT=%d -DNGRPS_SIM=%d",
-          Nx, Nx_loc, Nx_pad, Nx_tot, Nx_blks, Nq, Nz, Ne, Ns, Nsim, Nsim_loc, Nt, Ngrps_sim);
+          " -DNSIM=%d -DNSIM_LOC=%d -DNT=%d -DNGRPS_SIM=%d -DBET_TEST=%f, -DGAM_TEST=%f",
+          Nx, Nx_loc, Nx_pad, Nx_tot, Nx_blks, Nq, Nz, Ne, Ns, Nsim, Nsim_loc, Nt, Ngrps_sim, bet, gam);
 
   // knl = kernel_from_string(ctx, knl_text, "solve", buildOptions);
   cl_program prg = program_from_string(ctx, knl_text, buildOptions);
