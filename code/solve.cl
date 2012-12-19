@@ -206,9 +206,11 @@ kernel void solve_iter(global double* c_all, global double* V_all,
           else
             kx = NX_PAD - (NX_TOT - NX_LOC) - 1;
 
+#if 0
           if (grp_x == Ngrp_x && lx == 0)
             if (x_endog_loc[NS*kx + gs] < x_max)
               printf("bad x grid! \n");
+#endif
 
           // kx = min(NX_LOC-1, NX - (NX_LOC-1)*grp_x - 1);
 
@@ -319,6 +321,11 @@ kernel void sim_psums(global double* x_sim, constant double* y_sim,
 
   int gsim = get_global_id(0);
   int lsim = get_local_id(0);
+
+  if (lsim == 0)
+     a_psums[get_group_id(0)] = 0.0;
+
+  barrier(CLK_LOCAL_MEM_FENCE);
 
   /*
     if (gsim == 0)

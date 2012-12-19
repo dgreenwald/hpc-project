@@ -11,13 +11,13 @@ ifdef OPENCL_LIB
 endif
 
 solve: solve.c cl-helper.o 
-	gcc $(CL_CFLAGS) $(CL_LDFLAGS) -std=gnu99 -lrt -lOpenCL -o$@ $^
+	gcc $(CL_CFLAGS) $(CL_LDFLAGS) -std=gnu99 -lrt -lm  -lOpenCL -o$@ $^
 
 solve_float: solve_float.c cl-helper.o 
-	gcc $(CL_CFLAGS) $(CL_LDFLAGS) -std=gnu99 -lrt -lOpenCL -o$@ $^
+	gcc $(CL_CFLAGS) $(CL_LDFLAGS) -std=gnu99 -lrt -lm  -lOpenCL -o$@ $^
 
 print-devices: print-devices.c cl-helper.o
-	gcc $(CL_CFLAGS) $(CL_LDFLAGS) -std=gnu99 -lrt -lOpenCL -o$@ $^
+	gcc $(CL_CFLAGS) $(CL_LDFLAGS) -std=gnu99 -lrt -lm  -lOpenCL -o$@ $^
 
 %.o : %.c %.h
 	gcc -c $(CL_CFLAGS) -std=gnu99 $<

@@ -4,22 +4,24 @@
 #include <stdio.h>
 #include <math.h>
 
+#define SIMULATE 0
+
 // Polynomial spaced grid
 cl_double* poly_grid(cl_double f_min, cl_double f_max, cl_double k, cl_long N)
 {
   cl_double *f = malloc(sizeof(cl_double)*N);
   if (!f) { perror("alloc error in poly_grid"); abort(); }
 
-  for (int ii = 0; ii < N; ++ii)
+  for (cl_int ii = 0; ii < N; ++ii)
     {
-      f[ii] = f_min + (f_max - f_min) * pow(((double) ii)/((double) (N-1)), 1/k);
+      f[ii] = f_min + (f_max - f_min) * pow(((cl_double) ii)/((cl_double) (N-1)), 1/k);
     }
   return f;
 }
 
 // Transition probability matrix
-cl_double* getP(double u_b, double u_g, double dur_b, double dur_g, double udur_b, double udur_g,
-                double rat_bg, double rat_gb)
+cl_double* getP(cl_double u_b, cl_double u_g, cl_double dur_b, cl_double dur_g, cl_double udur_b, cl_double udur_g,
+                cl_double rat_bg, cl_double rat_gb)
 {
   cl_double *P = malloc(sizeof(cl_double)*16);
   if (!P) { perror("alloc error in getP"); abort(); }
@@ -49,10 +51,10 @@ cl_double* getP(double u_b, double u_g, double dur_b, double dur_g, double udur_
 
   // Check matrix
   cl_double Psum;
-  for (int ii = 0; ii < 4; ++ii)
+  for (cl_int ii = 0; ii < 4; ++ii)
     {
       Psum = 0;
-      for (int jj = 0; jj < 4; ++jj)
+      for (cl_int jj = 0; jj < 4; ++jj)
         {
           if (P[4*jj + ii] < 0) { perror("P < 0"); abort(); }
           Psum += P[4*jj + ii];
@@ -64,8 +66,8 @@ cl_double* getP(double u_b, double u_g, double dur_b, double dur_g, double udur_
 
 }
 
-// Allocates double buffer
-cl_mem alloc_dbuf(cl_context ctx, cl_int N, int read, int write)
+// Allocates cl_double buffer
+cl_mem alloc_dbuf(cl_context ctx, cl_int N, cl_int read, cl_int write)
 {
   cl_mem_flags flag;
   cl_int status;
@@ -83,7 +85,7 @@ cl_mem alloc_dbuf(cl_context ctx, cl_int N, int read, int write)
   return buf;
 }
 
-// Write to double buffer
+// Write to cl_double buffer
 void write_dbuf(cl_command_queue queue, cl_mem buf, const cl_double *arr, cl_int N)
 {
 
@@ -94,7 +96,7 @@ void write_dbuf(cl_command_queue queue, cl_mem buf, const cl_double *arr, cl_int
   return;
 }
 
-// Read from double buffer
+// Read from cl_double buffer
 void read_dbuf(cl_command_queue queue, cl_mem buf, cl_double *arr, cl_int N)
 {
 
@@ -105,8 +107,8 @@ void read_dbuf(cl_command_queue queue, cl_mem buf, cl_double *arr, cl_int N)
   return;
 }
 
-// Allocates int buffer
-cl_mem alloc_ibuf(cl_context ctx, cl_int N, int read, int write)
+// Allocates cl_int buffer
+cl_mem alloc_ibuf(cl_context ctx, cl_int N, cl_int read, cl_int write)
 {
   cl_mem_flags flag;
   cl_int status;
@@ -124,7 +126,7 @@ cl_mem alloc_ibuf(cl_context ctx, cl_int N, int read, int write)
   return buf;
 }
 
-// Write to int buffer
+// Write to cl_int buffer
 void write_ibuf(cl_command_queue queue, cl_mem buf, const cl_int *arr, cl_int N)
 {
 
@@ -135,7 +137,7 @@ void write_ibuf(cl_command_queue queue, cl_mem buf, const cl_int *arr, cl_int N)
   return;
 }
 
-// Read from int buffer
+// Read from cl_int buffer
 void read_ibuf(cl_command_queue queue, cl_mem buf, cl_int *arr, cl_int N)
 {
 
@@ -146,43 +148,52 @@ void read_ibuf(cl_command_queue queue, cl_mem buf, cl_int *arr, cl_int N)
   return;
 }
 
-void update_qbar(double* q_bar, double* q_bar_old, const double* q_sim, const int* z_sim, int Nt, int Nburn)
+cl_int update_qbar(cl_double* q_bar, cl_double* q_bar_old, const cl_double* q_sim, const cl_int* z_sim, cl_int Nt, cl_int Nburn, cl_double tol)
 {
-  int N[2] = {0, 0};
 
-  // update old value
-  q_bar_old[0] = q_bar[0];
-  q_bar_old[1] = q_bar[1];
-
-  // calculate new value
-  q_bar[0] = 0;
-  q_bar[1] = 0;
-  for (int tt = Nburn; tt < Nt; ++tt)
+  if (fabs(q_bar_old[0] - q_bar[0]) + fabs(q_bar_old[1] - q_bar[1]) >= tol)
     {
-      if (z_sim[tt] == 0)
-        {
-          ++N[0];
-          q_bar[0] += q_sim[tt];
-        }
-      else if (z_sim[tt] == 1)
-        {
-          ++N[1];
-          q_bar[1] += q_sim[tt];
-        }
+      cl_int N[2] = {0, 0};
+
+      // update old value
+      q_bar_old[0] = q_bar[0];
+      q_bar_old[1] = q_bar[1];
+      
+      // calculate new value
+      q_bar[0] = 0;
+      q_bar[1] = 0;
+      for (cl_int tt = Nburn; tt < Nt; ++tt)
+	{
+	  if (z_sim[tt] == 0)
+	    {
+	      ++N[0];
+	      q_bar[0] += q_sim[tt];
+	    }
+	  else if (z_sim[tt] == 1)
+	    {
+	      ++N[1];
+	      q_bar[1] += q_sim[tt];
+	    }
+	}
+      
+      q_bar[0] /= (cl_double) N[0];
+      q_bar[1] /= (cl_double) N[1];
+      
+      return 0;
     }
-
-  q_bar[0] /= (double) N[0];
-  q_bar[1] /= (double) N[1];
-
+  else
+    {
+      return 1;
+    }
 }
 
-int main(int argc, char **argv)
+cl_int main(cl_int argc, char **argv)
 {
 
   // Timing Setup
 
   timestamp_type time1, time2;
-  double elapsed;
+  cl_double elapsed;
 
   // OpenCL Setup
 
@@ -192,9 +203,9 @@ int main(int argc, char **argv)
   cl_command_queue queue;
   cl_int status;
 
-  // create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
-  // create_context_on("Intel", NULL, 0, &ctx, &queue, 0);
-  create_context_on("Advanced", NULL, 0, &ctx, &queue, 0);
+  create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
+  // create_context_on("Cl_Intel", NULL, 0, &ctx, &queue, 0);
+  // create_context_on("Advanced", NULL, 0, &ctx, &queue, 0);
 
   // Define parameters
 
@@ -252,9 +263,9 @@ int main(int argc, char **argv)
   Pz[1][0] = 1/dur_g;
 
   /* // Outputting P matrix
-     for (int ii = 0; ii < Ns; ++ii)
+     for (cl_int ii = 0; ii < Ns; ++ii)
      {
-     for (int jj = 0; jj < Ns; ++jj)
+     for (cl_int jj = 0; jj < Ns; ++jj)
      printf("P[%d, %d] = %g  ", ii, jj, P[4*jj + ii]);
      printf("\n");
      }
@@ -293,10 +304,10 @@ int main(int argc, char **argv)
   if (!done_end) { perror("alloc done_end"); abort(); }
 
   // Initialize solution matrices
-  for (int ix = 0; ix < Nx; ++ix)
-    for (int iq = 0; iq < Nq; ++iq)
-      for (int iz = 0; iz < Nz; ++iz)
-        for (int ie = 0; ie < Ne; ++ie)
+  for (cl_int ix = 0; ix < Nx; ++ix)
+    for (cl_int iq = 0; iq < Nq; ++iq)
+      for (cl_int iz = 0; iz < Nz; ++iz)
+        for (cl_int ie = 0; ie < Ne; ++ie)
           {
             c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = x_grid[ix] + w_grid[iz]*e_grid[ie] - x_min; // Zero bond solution
             V_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = pow(c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie], 1-gam)/(1-gam);
@@ -309,8 +320,8 @@ int main(int argc, char **argv)
   q_bar_old[0] = -1e+10;
   q_bar_old[1] = -1e+10;
 
-  for (int iz = 0; iz < Nz; ++iz)
-    for (int ie = 0; ie < Ne; ++ie)
+  for (cl_int iz = 0; iz < Nz; ++iz)
+    for (cl_int ie = 0; ie < Ne; ++ie)
       {
         y_grid[Ne*iz + ie] = w_grid[iz]*e_grid[ie];
         printf("y_grid[%d] = %g \n", Ne*iz + ie, y_grid[Ne*iz + ie]);
@@ -330,7 +341,7 @@ int main(int argc, char **argv)
 
   /*
     printf("before kernel \n");
-    for (int ii = 0; ii < Nx*Nq*Ns; ++ii)
+    for (cl_int ii = 0; ii < Nx*Nq*Ns; ++ii)
     {
     printf("%d: c = %g, V = %g \n", ii, c_all[ii], V_all[ii]);
     }
@@ -366,16 +377,16 @@ int main(int argc, char **argv)
   cl_double *y_sim = malloc(sizeof(cl_double) * Nsim * Nt);
   if (!y_sim) { perror("alloc y_sim"); abort(); }
 
-  cl_int *z_sim = malloc(sizeof(int) * Nt);
+  cl_int *z_sim = malloc(sizeof(cl_int) * Nt);
   if (!z_sim) { perror("alloc z_sim"); abort(); }
 
-  cl_int *e_sim = malloc(sizeof(int) * Nsim * Nt);
+  cl_int *e_sim = malloc(sizeof(cl_int) * Nsim * Nt);
   if (!e_sim) { perror("alloc e_sim"); abort(); }
 
   cl_double *a_net = malloc(sizeof(cl_double));
   if (!a_net) { perror("alloc a_net"); abort(); }
 
-  double *q_sim = malloc(sizeof(double) * Nt);
+  cl_double *q_sim = malloc(sizeof(cl_double) * Nt);
   if (!q_sim) { perror("alloc q_sim"); abort(); }
 
   // Allocate device simulation memory
@@ -388,13 +399,13 @@ int main(int argc, char **argv)
   cl_mem e_sim_buf = alloc_ibuf(ctx, Nsim*Nt, 1, 0);
 
   // Initialize simulation arrays
-  double draw;
+  cl_double draw;
   // Draw recession/expansion states
-  for (int tt = 0; tt < Nt; ++tt)
+  for (cl_int tt = 0; tt < Nt; ++tt)
     {
       if (tt > 0)
         {
-          draw = ((double) rand())/((double) RAND_MAX);
+          draw = ((cl_double) rand())/((cl_double) RAND_MAX);
           if (draw <= Pz[z_sim[tt-1]][0])
             z_sim[tt] = 0;
           else
@@ -409,14 +420,14 @@ int main(int argc, char **argv)
     }
 
   // Draw employment states for each individual
-  double Pe[Ne][Ne][Nz][Nz];
-  double Pe_sum;
-  for (int iz = 0; iz < Nz; ++iz)
-    for (int jz = 0; jz < Nz; ++jz)
-      for (int ie = 0; ie < Ne; ++ie)
+  cl_double Pe[Ne][Ne][Nz][Nz];
+  cl_double Pe_sum;
+  for (cl_int iz = 0; iz < Nz; ++iz)
+    for (cl_int jz = 0; jz < Nz; ++jz)
+      for (cl_int ie = 0; ie < Ne; ++ie)
         {
           Pe_sum = 0.0;
-          for (int je = 0; je < Ne; ++je)
+          for (cl_int je = 0; je < Ne; ++je)
             {
               Pe[ie][je][iz][jz] = P[Ns*(Ne*jz + je) + Ne*iz + ie]/Pz[iz][jz];
               Pe_sum += Pe[ie][je][iz][jz];
@@ -425,13 +436,13 @@ int main(int argc, char **argv)
             { perror("bad probability matrix \n"); abort(); }
         }
 
-  for (int tt = 0; tt < Nt; ++tt)
+  for (cl_int tt = 0; tt < Nt; ++tt)
     {
       if (tt > 0)
         {
-          for (int ii = 0; ii < Nsim; ++ii)
+          for (cl_int ii = 0; ii < Nsim; ++ii)
             {
-              draw = ((double) rand())/((double) RAND_MAX);
+              draw = ((cl_double) rand())/((cl_double) RAND_MAX);
               if (draw <= Pe[e_sim[Nsim*(tt-1) + ii]][0][z_sim[tt-1]][z_sim[tt]])
                 {
                   e_sim[Nsim*tt + ii] = 0;
@@ -449,7 +460,7 @@ int main(int argc, char **argv)
         }
       else
         {
-          for (int ii = 0; ii < Nsim; ++ii)
+          for (cl_int ii = 0; ii < Nsim; ++ii)
             {
               e_sim[Nsim*tt + ii] = 1;
               y_sim[Nsim*tt + ii] = y_grid[Ne*z_sim[tt] + e_sim[Nsim*tt + ii]];
@@ -461,7 +472,7 @@ int main(int argc, char **argv)
         }
     }
 
-  for (int ii = 0; ii < Nsim; ++ii)
+  for (cl_int ii = 0; ii < Nsim; ++ii)
     {
       x_sim[ii] = 0.0;
     }
@@ -475,7 +486,7 @@ int main(int argc, char **argv)
   // CALL_CL_GUARDED(clFinish, (queue));
 
   // Solution setup
-  int iter;
+  cl_int iter;
   char* knl_text = read_file("solve.cl");
   char buildOptions[200];
   sprintf(buildOptions, "-DNX=%d -DNX_LOC=%d -DNX_PAD=%d -DNX_TOT=%d -DNX_BLKS=%d -DNQ=%d -DNZ=%d -DNE=%d -DNS=%d"
@@ -490,8 +501,8 @@ int main(int argc, char **argv)
   CHECK_CL_ERROR(status, "clCreateKernel");
 
   // Add global arguments
-  int n_arg = 10;
-  int n_loc = 5;
+  cl_int n_arg = 10;
+  cl_int n_loc = 5;
 
   size_t ldim[3] = {Nx_loc, 1, Ns};
   // size_t gdim[3] = {ldim[0]*((Nx-1)/(ldim[0]-1) + 1), Nq, Ns};
@@ -502,8 +513,8 @@ int main(int argc, char **argv)
   printf("gdim = (%d, %d, %d) \n", gdim[0], gdim[1], gdim[2]);
 
   // Simulation setup
-  int cleared;
-  double q_lb, q_ub, q_mid;
+  cl_int cleared;
+  cl_double q_lb, q_ub, q_mid;
 
   // sim_psums kernel
   size_t ldim_sim[] = {Nsim_loc};
@@ -525,8 +536,9 @@ int main(int argc, char **argv)
   CHECK_CL_ERROR(status, "clCreateKernel");
 
   // Iterate to convergence over q_bar
-  int qbar_iter = 0;
-  for (int itemp = 0; itemp < 3; ++itemp)
+  cl_int qbar_done = 0;
+  cl_int qbar_iter = 0;
+  while (qbar_done == 0)
     {
       ++qbar_iter;
 
@@ -552,7 +564,7 @@ int main(int argc, char **argv)
           SET_10_KERNEL_ARGS(solve_iter_knl, c_buf, V_buf, V_old_buf, x_buf, q_buf, y_buf,
                              P_buf, q_bar_buf, params_buf, done_buf);
           // Add local arguments
-          for (int ii = n_arg; ii < n_arg + n_loc; ++ii)
+          for (cl_int ii = n_arg; ii < n_arg + n_loc; ++ii)
             {
               SET_LOCAL_ARG(solve_iter_knl, ii, Nx_loc*Ns*sizeof(cl_double));
             }
@@ -587,9 +599,9 @@ int main(int argc, char **argv)
 
       /*
         printf("after kernel \n");
-        for (int ix = 0; ix < Nx; ++ix)
-        for (int iq = 0; iq < Nq; ++iq)
-        for (int is = 0; is < Ns; ++is)
+        for (cl_int ix = 0; ix < Nx; ++ix)
+        for (cl_int iq = 0; iq < Nq; ++iq)
+        for (cl_int is = 0; is < Ns; ++is)
         if (iq == 0 && is == 0)
         printf("(%d, %d, %d): x = %g, c = %g, V = %g, V_old = %g \n",
         ix, iq, is, x_grid[ix], c_all[Ns*(Nq*ix + iq) + is], V_all[Ns*(Nq*ix + iq) + is],
@@ -599,7 +611,7 @@ int main(int argc, char **argv)
       // Loop to convergence over q_bar
       get_timestamp(&time1);
 
-      for (int tt = 0; tt < Nt; ++tt)
+      for (cl_int tt = 0; tt < Nt; ++tt)
         {
           cleared = 0;
           iter = 0;
@@ -613,10 +625,25 @@ int main(int argc, char **argv)
               ++iter;
               // printf("ITERATION %d: \n", iter);
 
-              q_mid = 0.5*(q_lb + q_ub);
+              q_mid = (cl_double) 0.5*(q_lb + q_ub);
 
               SET_11_KERNEL_ARGS(sim_psums_knl, x_sim_buf, y_sim_buf, z_sim_buf, e_sim_buf,
                                  c_buf, params_buf, x_buf, q_buf, a_psums_buf, q_mid, tt);
+	      
+	      /*
+	      CALL_CL_GUARDED(clSetKernelArg, (sim_psums_knl, 0, sizeof(x_sim_buf), &x_sim_buf));
+	      CALL_CL_GUARDED(clSetKernelArg, (sim_psums_knl, 1, sizeof(y_sim_buf), &y_sim_buf));
+	      CALL_CL_GUARDED(clSetKernelArg, (sim_psums_knl, 2, sizeof(z_sim_buf), &z_sim_buf));
+	      CALL_CL_GUARDED(clSetKernelArg, (sim_psums_knl, 3, sizeof(e_sim_buf), &e_sim_buf));
+	      CALL_CL_GUARDED(clSetKernelArg, (sim_psums_knl, 4, sizeof(c_buf), &c_buf));
+	      CALL_CL_GUARDED(clSetKernelArg, (sim_psums_knl, 5, sizeof(params_buf), &params_buf));
+	      CALL_CL_GUARDED(clSetKernelArg, (sim_psums_knl, 6, sizeof(x_buf), &x_buf));
+	      CALL_CL_GUARDED(clSetKernelArg, (sim_psums_knl, 7, sizeof(q_buf), &q_buf));
+	      CALL_CL_GUARDED(clSetKernelArg, (sim_psums_knl, 8, sizeof(a_psums_buf), &a_psums_buf));
+	      CALL_CL_GUARDED(clSetKernelArg, (sim_psums_knl, 9, sizeof(q_mid), &q_mid));	      
+	      CALL_CL_GUARDED(clSetKernelArg, (sim_psums_knl, 10, sizeof(tt), &tt));	      	      
+	      */
+
               SET_LOCAL_ARG(sim_psums_knl, 11, Nsim_loc*sizeof(cl_double));
 
               CALL_CL_GUARDED(clFinish, (queue));
@@ -673,7 +700,7 @@ int main(int argc, char **argv)
       elapsed = timestamp_diff_in_seconds(time1,time2);
       printf("Simulation routine, time elapsed: %f s\n", elapsed);
 
-      update_qbar(q_bar, q_bar_old, q_sim, z_sim, Nt, Nburn);
+      qbar_done = update_qbar(q_bar, q_bar_old, q_sim, z_sim, Nt, Nburn, tol);
     }
 
   // CLEAN UP
