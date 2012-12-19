@@ -662,6 +662,7 @@ cl_int main(cl_int argc, char **argv)
                               (queue, add_psums_knl, /*dimension*/ 1,
                                NULL, gdim_sim, ldim_sim, 0, NULL, NULL));
 
+              CALL_CL_GUARDED(clFinish, (queue));
               read_dbuf(queue, a_net_buf, a_net, 1);
               CALL_CL_GUARDED(clFinish, (queue));
               // printf("finished add_psums \n");
