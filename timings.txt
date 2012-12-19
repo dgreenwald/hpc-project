@@ -1,0 +1,43 @@
+CUDA CPU:
+Nx = 1000, Nq = 50
+Simulation of 128 agents, 1200 periods.
+
+ITERATION 1: 
+q_bar = {1.0101, 0.990099}, q_bar_old = {-1e+10, -1e+10} 
+Solution routine, time elapsed: 105.325638 s
+464 iterations to convergence 
+Simulation routine, time elapsed: 6.356526 s
+
+ITERATION 2: 
+q_bar = {1.09517, 1.1875}, q_bar_old = {1.0101, 0.990099} 
+Solution routine, time elapsed: 0.679097 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 5.820137 s
+
+ITERATION 3: 
+q_bar = {1.09517, 1.1875}, q_bar_old = {1.09517, 1.1875} 
+Solution routine, time elapsed: 0.680796 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 7.045184 s
+
+CUDA CPU: 3.80 GHz
+Nx = 1000, Nq = 50
+Simulation of 1024 agents, 1200 periods
+
+ITERATION 1:
+q_bar = {1.0101, 0.990099}, q_bar_old = {-1e+10, -1e+10}
+Solution routine, time elapsed: 16.004433 s
+82 iterations to convergence
+Simulation routine, time elapsed: 27.497841 s
+
+ITERATION 2:
+q_bar = {1.0923, 1.18706}, q_bar_old = {1.0101, 0.990099}
+Solution routine, time elapsed: 0.590354 s
+3 iterations to convergence
+Simulation routine, time elapsed: 18.863665 s
+
+ITERATION 3:
+q_bar = {1.0923, 1.18706}, q_bar_old = {1.0923, 1.18706}
+Solution routine, time elapsed: 0.589182 s
+3 iterations to convergence
+Simulation routine, time elapsed: 18.859099 s
