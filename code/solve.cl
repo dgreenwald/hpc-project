@@ -27,13 +27,11 @@ double interp2(global double* const f_all, double b_x, double b_q,
   return (f_0 + b_x*(f_1 - f_0));
 }
 
-kernel void solve_iter(global double* c_all, global double* V_all,
-                       global double* V_old, constant double* x_grid,
-                       constant double* q_grid, constant double* y_grid,
+kernel void solve_iter(global double* c_all, global double* c_old,
+                       constant double* x_grid, constant double* q_grid, constant double* y_grid,
                        constant double* P, constant double* q_bar,
                        constant double* params,  global int* done,
-                       local double* V_next_loc, local double* dU_next_loc,
-                       local double* EV_loc,
+                       local double* dU_next_loc, local double* EV_loc,
                        local double* x_endog_loc, local double* c_endog_loc)
 {
 
@@ -46,7 +44,7 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 
   int ix, jx, kx, jq;
   double x_next, q_next, b_x, b_q,
-    x_i, q_i, c_i, EV_i, EdU_i, V_i, y_i, err_i, c_min;
+    x_i, q_i, c_i, EV_i, EdU_i, y_i, err_i, c_min;
 
   int2 bnds;
 
@@ -95,12 +93,14 @@ kernel void solve_iter(global double* c_all, global double* V_all,
   if (gx < NX)
     {
       // Calculate current step error
-      err_i = fabs(V_all[NS*(NQ*gx + gq) + gs] - V_old[NS*(NQ*gx + gq) + gs]);
-      if (err_i > tol)
+      // err_i = fabs(V_all[NS*(NQ*gx + gq) + gs] - V_old[NS*(NQ*gx + gq) + gs]);
+      // if (err_i > tol)
+      if (fabs(c_all[NS*(NQ*gx + gq) + gs] - c_old[NS*(NQ*gx + gq) + gs]) > tol)      
         done_loc = 0;
 
-      // Update V_old
-      V_old[NS*(NQ*gx + gq) + gs] = V_all[NS*(NQ*gx + gq) + gs];
+      // Update c_old
+      // V_old[NS*(NQ*gx + gq) + gs] = V_all[NS*(NQ*gx + gq) + gs];
+      c_old[NS*(NQ*gx + gq) + gs] = c_all[NS*(NQ*gx + gq) + gs];
     }
 
   if (gx < NX_PAD)
@@ -124,7 +124,7 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 
       y_i = y_grid[gs];
 
-      V_next_loc[NS*lx + gs] = interp2(V_all, b_x, b_q, jx, jq, gs);
+      // V_next_loc[NS*lx + gs] = interp2(V_all, b_x, b_q, jx, jq, gs);
       dU_next_loc[NS*lx + gs] = pow(interp2(c_all, b_x, b_q, jx, jq, gs), -gam);
 
       /*
@@ -146,11 +146,11 @@ kernel void solve_iter(global double* c_all, global double* V_all,
     {
       jx = (NX_LOC-1)*grp_x + lx;
 
-      EV_loc[NS*lx + gs] = 0.0;
+      // EV_loc[NS*lx + gs] = 0.0;
       EdU_i = 0.0;
       for (int is = 0; is < NS; ++is)
         {
-          EV_loc[NS*lx + gs] += P[NS*is + gs]*V_next_loc[NS*lx + is];
+          // EV_loc[NS*lx + gs] += P[NS*is + gs]*V_next_loc[NS*lx + is];
           EdU_i += P[NS*is + gs]*dU_next_loc[NS*lx + is];
         }
 
@@ -231,8 +231,8 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 
               c_min = y_i + (1 - q_i)*x_min;
               c_i = max(c_min + b_x*(c_endog_loc[gs] - c_min), 1e-6);
-              EV_i = EV_loc[gs];
-              V_i = pow(c_i, 1-gam)/(1-gam) + bet*EV_i;
+              // EV_i = EV_loc[gs];
+              // V_i = pow(c_i, 1-gam)/(1-gam) + bet*EV_i;
 
               /*
                 if (gq == 0 && gs == 0)
@@ -246,7 +246,7 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 
               // write to global memory
               c_all[NS*(NQ*ix + gq) + gs] = c_i;
-              V_all[NS*(NQ*ix + gq) + gs] = V_i;
+              // V_all[NS*(NQ*ix + gq) + gs] = V_i;
 
             }
           else if (x_i >= x_endog_loc[gs]
@@ -263,8 +263,8 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 
               // interpolate to calculate c, EV, then calculate V
               c_i = max(c_endog_loc[NS*jx + gs] + b_x*(c_endog_loc[NS*(jx+1) + gs] - c_endog_loc[NS*jx + gs]), 1e-6);
-              EV_i = EV_loc[NS*jx + gs] + b_x*(EV_loc[NS*(jx+1) + gs] - EV_loc[NS*jx + gs]);
-              V_i = pow(c_i, 1-gam)/(1-gam) + bet*EV_i;
+              // EV_i = EV_loc[NS*jx + gs] + b_x*(EV_loc[NS*(jx+1) + gs] - EV_loc[NS*jx + gs]);
+              // V_i = pow(c_i, 1-gam)/(1-gam) + bet*EV_i;
 
               /*
                 if ((get_group_id(0) == 0) && gq == 0 && gs == 0)
@@ -284,7 +284,7 @@ kernel void solve_iter(global double* c_all, global double* V_all,
 
               // write to global memory
               c_all[NS*(NQ*ix + gq) + gs] = c_i;
-              V_all[NS*(NQ*ix + gq) + gs] = V_i;
+              // V_all[NS*(NQ*ix + gq) + gs] = V_i;
             }
         }
     }

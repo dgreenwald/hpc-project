@@ -279,11 +279,16 @@ cl_int main(cl_int argc, char **argv)
   cl_double *c_all = malloc(sizeof(cl_double) * Nx * Nq * Ns);
   if (!c_all) { perror("alloc c_all"); abort(); }
 
+  cl_double *c_init = malloc(sizeof(cl_double) * Nx * Nq * Ns);
+  if (!c_init) { perror("alloc c_init"); abort(); }
+
+  /*
   cl_double *V_all = malloc(sizeof(cl_double) * Nx * Nq * Ns);
   if (!V_all) { perror("alloc V_all"); abort(); }
 
   cl_double *V_init = malloc(sizeof(cl_double) * Nx * Nq * Ns);
   if (!V_init) { perror("alloc V_init"); abort(); }
+  */
 
   cl_double *y_grid = malloc(sizeof(cl_double) * Ns);
   if (!y_grid) { perror("alloc y_grid"); abort(); }
@@ -310,8 +315,11 @@ cl_int main(cl_int argc, char **argv)
         for (cl_int ie = 0; ie < Ne; ++ie)
           {
             c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = x_grid[ix] + w_grid[iz]*e_grid[ie] - x_min; // Zero bond solution
+	    c_init[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = -1.0; // (bad) initial comparison
+	    /*
             V_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = pow(c_all[Ne*(Nz*(Nq*ix + iq) + iz) + ie], 1-gam)/(1-gam);
             V_init[Ne*(Nz*(Nq*ix + iq) + iz) + ie] = -1e+10;
+	    */
           }
 
   q_bar[0] = 1/z_grid[0];
@@ -349,8 +357,11 @@ cl_int main(cl_int argc, char **argv)
 
   // Allocate device solution memory
   cl_mem c_buf = alloc_dbuf(ctx, Nx*Nq*Ns, 1, 1);
+  cl_mem c_old_buf = alloc_dbuf(ctx, Nx*Nq*Ns, 1, 1);
+  /*
   cl_mem V_buf = alloc_dbuf(ctx, Nx*Nq*Ns, 1, 1);
   cl_mem V_old_buf = alloc_dbuf(ctx, Nx*Nq*Ns, 1, 1);
+  */
   cl_mem x_buf = alloc_dbuf(ctx, Nx, 1, 0);
   cl_mem q_buf = alloc_dbuf(ctx, Nq, 1, 0);
   cl_mem y_buf = alloc_dbuf(ctx, Ns, 1, 0);
@@ -361,7 +372,7 @@ cl_int main(cl_int argc, char **argv)
 
   // Transfer solution buffers to device
   write_dbuf(queue, c_buf, c_all, Nx*Nq*Ns);
-  write_dbuf(queue, V_buf, V_all, Nx*Nq*Ns);
+  // write_dbuf(queue, V_buf, V_all, Nx*Nq*Ns);
   write_dbuf(queue, x_buf, x_grid, Nx);
   write_dbuf(queue, q_buf, q_grid, Nq);
   write_dbuf(queue, y_buf, y_grid, Ns);
@@ -500,10 +511,6 @@ cl_int main(cl_int argc, char **argv)
   cl_kernel solve_iter_knl = clCreateKernel(prg, "solve_iter", &status);
   CHECK_CL_ERROR(status, "clCreateKernel");
 
-  // Add global arguments
-  cl_int n_arg = 10;
-  cl_int n_loc = 5;
-
   size_t ldim[3] = {Nx_loc, 1, Ns};
   // size_t gdim[3] = {ldim[0]*((Nx-1)/(ldim[0]-1) + 1), Nq, Ns};
   size_t gdim[3] = {Nx_tot, Nq, Ns};
@@ -546,8 +553,9 @@ cl_int main(cl_int argc, char **argv)
       printf("q_bar = {%g, %g}, q_bar_old = {%g, %g} \n", 
 	     q_bar[0], q_bar[1], q_bar_old[0], q_bar_old[1]);
 
-      // Initialize V_old
-      write_dbuf(queue, V_old_buf, V_init, Nx*Nq*Ns);
+      // Initialize c_old
+      write_dbuf(queue, c_old_buf, c_init, Nx*Nq*Ns);
+      // write_dbuf(queue, V_old_buf, V_init, Nx*Nq*Ns);
 
       // Solve agent's problem
       get_timestamp(&time1);
@@ -561,10 +569,10 @@ cl_int main(cl_int argc, char **argv)
           // initialize with done = 1
           write_ibuf(queue, done_buf, done_start, 1);
 
-          SET_10_KERNEL_ARGS(solve_iter_knl, c_buf, V_buf, V_old_buf, x_buf, q_buf, y_buf,
+          SET_9_KERNEL_ARGS(solve_iter_knl, c_buf, c_old_buf, x_buf, q_buf, y_buf,
                              P_buf, q_bar_buf, params_buf, done_buf);
           // Add local arguments
-          for (cl_int ii = n_arg; ii < n_arg + n_loc; ++ii)
+          for (cl_int ii = 9; ii < 9 + 4; ++ii)
             {
               SET_LOCAL_ARG(solve_iter_knl, ii, Nx_loc*Ns*sizeof(cl_double));
             }
@@ -723,8 +731,8 @@ cl_int main(cl_int argc, char **argv)
   free(a_net);
 
   CALL_CL_GUARDED(clReleaseKernel, (solve_iter_knl));
-  CALL_CL_GUARDED(clReleaseMemObject, (V_old_buf));
-  free(V_init);
+  CALL_CL_GUARDED(clReleaseMemObject, (c_old_buf));
+  free(c_init);
 
   CALL_CL_GUARDED(clReleaseMemObject, (done_buf));
   free(done_start);
@@ -732,7 +740,7 @@ cl_int main(cl_int argc, char **argv)
 
   CALL_CL_GUARDED(clFinish, (queue));
   CALL_CL_GUARDED(clReleaseMemObject, (c_buf));
-  CALL_CL_GUARDED(clReleaseMemObject, (V_buf));
+  // CALL_CL_GUARDED(clReleaseMemObject, (V_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (x_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (q_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (y_buf));
@@ -743,7 +751,7 @@ cl_int main(cl_int argc, char **argv)
   CALL_CL_GUARDED(clReleaseContext, (ctx));
 
   free(c_all);
-  free(V_all);
+  // free(V_all);
   free(x_grid);
   free(q_grid);
   free(y_grid);
