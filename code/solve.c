@@ -707,12 +707,38 @@ cl_int main(cl_int argc, char **argv)
 
         }
 
+      CALL_CL_GUARDED(clFinish, (queue));
+
       get_timestamp(&time2);
       elapsed = timestamp_diff_in_seconds(time1,time2);
       printf("Simulation routine, time elapsed: %f s\n", elapsed);
 
       qbar_done = update_qbar(q_bar, q_bar_old, q_sim, z_sim, Nt, Nburn, tol);
     }
+
+  // OUTPUT RESULTS
+  read_dbuf(queue, c_buf, c_all, Nx*Nq*Ns);
+  read_dbuf(queue, x_sim_buf, x_sim, Nsim*Nt);
+
+  FILE *cfile = fopen("cfile.out", "wb");
+  FILE *xfile = fopen("xfile.out", "wb");
+  FILE *yfile = fopen("yfile.out", "wb");
+  FILE *zfile = fopen("zfile.out", "wb");
+  FILE *efile = fopen("efile.out", "wb");
+
+  printf("size of cl_double: %d, size of cl_int: %d \n", sizeof(cl_double), sizeof(cl_int));
+
+  fwrite(c_all, sizeof(cl_double), Nx*Nq*Ns, *cfile);
+  fwrite(x_sim, sizeof(cl_double), Nsim*Nt, *xfile);
+  fwrite(y_sim, sizeof(cl_double), Nsim*Nt, *yfile);
+  fwrite(z_sim, sizeof(cl_int), Nsim*Nt, *zfile);
+  fwrite(e_sim, sizeof(cl_int), Nsim*Nt, *efile);
+
+  fclose(*cfile);
+  fclose(*xfile);
+  fclose(*yfile);
+  fclose(*zfile);
+  fclose(*efile);
 
   // CLEAN UP
   CALL_CL_GUARDED(clReleaseMemObject, (x_sim_buf));

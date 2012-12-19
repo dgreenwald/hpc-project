@@ -1,0 +1,5 @@
+1. Don't actually need to use image files -- possible to look up index directly so the interpolation is really easy. This way we can use doubles.
+
+2. Need to put 1-d interpolator code directly into the kernel, possible to use subroutines, etc.
+
+3. There is a reduction operation (checking market clearing). Possible to use tools from today's lecture?
