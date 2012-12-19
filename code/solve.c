@@ -203,9 +203,9 @@ cl_int main(cl_int argc, char **argv)
   cl_command_queue queue;
   cl_int status;
 
-  create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
-  // create_context_on("Cl_Intel", NULL, 0, &ctx, &queue, 0);
-  // create_context_on("Advanced", NULL, 0, &ctx, &queue, 0);
+  // create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
+  // create_context_on("Intel", NULL, 0, &ctx, &queue, 0);
+  create_context_on("Advanced", NULL, 0, &ctx, &queue, 0);
 
   // Define parameters
 
@@ -233,7 +233,7 @@ cl_int main(cl_int argc, char **argv)
   const cl_int Ne = 2;
   const cl_int Ns = Nz*Ne;
   const cl_int Npar = 8;
-  const cl_int Nsim = 128;
+  const cl_int Nsim = 1024;
   const cl_int Nsim_loc = 128;
   const cl_int Ngrps_sim = (Nsim - 1)/Nsim_loc + 1;
   const cl_int Nt = 1200;
@@ -599,9 +599,12 @@ cl_int main(cl_int argc, char **argv)
 
       /*
         read_dbuf(queue, c_buf, c_all, Nx*Nq*Ns);
+        read_dbuf(queue, c_old_buf, c_init, Nx*Nq*Ns);
+      */
+	/*
         read_dbuf(queue, V_buf, V_all, Nx*Nq*Ns);
         read_dbuf(queue, V_old_buf, V_old, Nx*Nq*Ns);
-      */
+	*/
 
       CALL_CL_GUARDED(clFinish, (queue));
 
@@ -611,9 +614,8 @@ cl_int main(cl_int argc, char **argv)
         for (cl_int iq = 0; iq < Nq; ++iq)
         for (cl_int is = 0; is < Ns; ++is)
         if (iq == 0 && is == 0)
-        printf("(%d, %d, %d): x = %g, c = %g, V = %g, V_old = %g \n",
-        ix, iq, is, x_grid[ix], c_all[Ns*(Nq*ix + iq) + is], V_all[Ns*(Nq*ix + iq) + is],
-        V_old[Ns*(Nq*ix + iq) + is]);
+        printf("(%d, %d, %d): x = %g, c = %g c_old = %g \n",
+	       ix, iq, is, x_grid[ix], c_all[Ns*(Nq*ix + iq) + is], c_init[Ns*(Nq*ix + iq)]);
       */
 
       // Loop to convergence over q_bar
