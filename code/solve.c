@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <math.h>
 
+#define OUTPUT 1
+
 // Polynomial spaced grid
 cl_double* poly_grid(cl_double f_min, cl_double f_max, cl_double k, cl_long N)
 {
@@ -201,14 +203,14 @@ cl_int main(cl_int argc, char **argv)
   cl_command_queue queue;
   cl_int status;
 
-  // create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
+  create_context_on("NVIDIA", NULL, 0, &ctx, &queue, 0);
   // create_context_on("Intel", NULL, 0, &ctx, &queue, 0);
-  create_context_on("Advanced", NULL, 0, &ctx, &queue, 0);
+  // create_context_on("Advanced", NULL, 0, &ctx, &queue, 0);
 
   // Define parameters
 
   const cl_double freq = 4;
-  const cl_double tol = 1e-6;
+  const cl_double tol = 1e-8;
   const cl_double k = 0.4;
   const cl_double alp = 0.36;
   const cl_double gam = 2.0;
@@ -219,23 +221,23 @@ cl_int main(cl_int argc, char **argv)
   const cl_double q_max = 1/bet + 0.25;
   const cl_double x_min = -0.5;
   const cl_double x_max = 10;
-  const cl_int Nx = 250;
-  const cl_int Nx_loc = 64;
+  const cl_int Nx = 2000;
+  const cl_int Nx_loc = 128;
   // const cl_int Nx = 9;
   // const cl_int Nx_loc = 8;
   const cl_int Nx_pad = Nx + (Nx-2)/(Nx_loc-1);
   const cl_int Nx_tot = Nx_loc*((Nx_pad-1)/Nx_loc + 1);
   const cl_int Nx_blks = (Nx-1)/Nx_loc + 1;
-  const cl_int Nq = 50;
+  const cl_int Nq = 1000;
   const cl_int Nz = 2;
   const cl_int Ne = 2;
   const cl_int Ns = Nz*Ne;
   const cl_int Npar = 8;
-  const cl_int Nsim = 1024;
-  const cl_int Nsim_loc = 128;
+  const cl_int Nsim = 5120;
+  const cl_int Nsim_loc = 256;
   const cl_int Ngrps_sim = (Nsim - 1)/Nsim_loc + 1;
-  const cl_int Nt = 120;
-  const cl_int Nburn = 20;
+  const cl_int Nt = 1200;
+  const cl_int Nburn = 200;
 
   cl_double* x_grid = poly_grid(x_min, x_max, k, Nx);
   cl_double* q_grid = poly_grid(q_min, q_max, 1.0, Nq); // 1.0 for even grid
@@ -715,6 +717,7 @@ cl_int main(cl_int argc, char **argv)
     }
 
   // OUTPUT RESULTS
+#if OUTPUT
   read_dbuf(queue, c_buf, c_all, Nx*Nq*Ns);
   read_dbuf(queue, x_sim_buf, x_sim, Nsim*Nt);
 
@@ -743,6 +746,7 @@ cl_int main(cl_int argc, char **argv)
   fclose(efile);
 
   printf("closed all files \n");
+#endif
 
   // CLEAN UP
   CALL_CL_GUARDED(clReleaseMemObject, (x_sim_buf));

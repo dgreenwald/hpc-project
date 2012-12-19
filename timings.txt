@@ -41,3 +41,266 @@ q_bar = {1.0923, 1.18706}, q_bar_old = {1.0923, 1.18706}
 Solution routine, time elapsed: 0.589182 s
 3 iterations to convergence
 Simulation routine, time elapsed: 18.859099 s
+
+
+
+'Tesla M2070'
+Nx = 1000, Nq = 50, 1200 agents, 200 periods, tol = 1e-8
+ITERATION 1: 
+q_bar = {1.0101, 0.990099}, q_bar_old = {-1e+10, -1e+10} 
+Solution routine, time elapsed: 0.222491 s
+123 iterations to convergence 
+Simulation routine, time elapsed: 11.104238 s
+
+ITERATION 2: 
+q_bar = {1.0923, 1.18706}, q_bar_old = {1.0101, 0.990099} 
+Solution routine, time elapsed: 0.005483 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 11.124661 s
+
+ITERATION 3: 
+q_bar = {1.0923, 1.18706}, q_bar_old = {1.0923, 1.18706} 
+Solution routine, time elapsed: 0.005526 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 11.136317 s
+
+
+
+'Tesla M2070'
+Nx = 1000, Nq = 50, 1024 agents, 1200 periods, tol = 1e-8
+ITERATION 1: 
+q_bar = {1.0101, 0.990099}, q_bar_old = {-1e+10, -1e+10} 
+Solution routine, time elapsed: 0.222491 s
+123 iterations to convergence 
+Simulation routine, time elapsed: 11.104238 s
+
+ITERATION 2: 
+q_bar = {1.0923, 1.18706}, q_bar_old = {1.0101, 0.990099} 
+Solution routine, time elapsed: 0.005483 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 11.124661 s
+
+ITERATION 3: 
+q_bar = {1.0923, 1.18706}, q_bar_old = {1.0923, 1.18706} 
+Solution routine, time elapsed: 0.005526 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 11.136317 s
+
+600 periods
+
+ITERATION 1: 
+q_bar = {1.0101, 0.990099}, q_bar_old = {-1e+10, -1e+10} 
+Solution routine, time elapsed: 1.005591 s
+122 iterations to convergence 
+Simulation routine, time elapsed: 5.633019 s
+
+ITERATION 2: 
+q_bar = {1.09234, 1.18747}, q_bar_old = {1.0101, 0.990099} 
+Solution routine, time elapsed: 0.024476 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 5.625814 s
+
+ITERATION 3: 
+q_bar = {1.09234, 1.18747}, q_bar_old = {1.09234, 1.18747} 
+Solution routine, time elapsed: 0.024497 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 5.620577 s
+
+
+2400 periods
+
+ITERATION 1: 
+q_bar = {1.0101, 0.990099}, q_bar_old = {-1e+10, -1e+10} 
+Solution routine, time elapsed: 1.003878 s
+122 iterations to convergence 
+Simulation routine, time elapsed: 22.348857 s
+
+ITERATION 2: 
+q_bar = {1.09256, 1.18681}, q_bar_old = {1.0101, 0.990099} 
+Solution routine, time elapsed: 0.024513 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 22.348554 s
+
+ITERATION 3: 
+q_bar = {1.09256, 1.18681}, q_bar_old = {1.09256, 1.18681} 
+Solution routine, time elapsed: 0.024553 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 22.379007 s
+
+
+
+512 agents
+
+ITERATION 1: 
+q_bar = {1.0101, 0.990099}, q_bar_old = {-1e+10, -1e+10} 
+Solution routine, time elapsed: 0.998205 s
+122 iterations to convergence 
+Simulation routine, time elapsed: 10.992711 s
+
+ITERATION 2: 
+q_bar = {1.09211, 1.18687}, q_bar_old = {1.0101, 0.990099} 
+Solution routine, time elapsed: 0.024398 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 10.871301 s
+
+ITERATION 3: 
+q_bar = {1.09211, 1.18687}, q_bar_old = {1.09211, 1.18687} 
+Solution routine, time elapsed: 0.024557 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 10.879569 s
+
+
+2048 agents
+
+ITERATION 1: 
+q_bar = {1.0101, 0.990099}, q_bar_old = {-1e+10, -1e+10} 
+Solution routine, time elapsed: 1.005148 s
+122 iterations to convergence 
+Simulation routine, time elapsed: 11.583534 s
+
+ITERATION 2: 
+q_bar = {1.0925, 1.18721}, q_bar_old = {1.0101, 0.990099} 
+Solution routine, time elapsed: 0.024501 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 11.581045 s
+
+ITERATION 3: 
+q_bar = {1.0925, 1.18721}, q_bar_old = {1.0925, 1.18721} 
+Solution routine, time elapsed: 0.016402 s
+2 iterations to convergence 
+Simulation routine, time elapsed: 11.586647 s
+
+
+
+4096 agents
+
+ITERATION 1: 
+q_bar = {1.0101, 0.990099}, q_bar_old = {-1e+10, -1e+10} 
+Solution routine, time elapsed: 1.020076 s
+122 iterations to convergence 
+Simulation routine, time elapsed: 12.090612 s
+
+ITERATION 2: 
+q_bar = {1.09297, 1.18692}, q_bar_old = {1.0101, 0.990099} 
+Solution routine, time elapsed: 0.024557 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 12.069586 s
+
+ITERATION 3: 
+q_bar = {1.09297, 1.18692}, q_bar_old = {1.09297, 1.18692} 
+Solution routine, time elapsed: 0.024679 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 12.073581 s
+
+
+
+
+Nq = 1000
+
+ITERATION 1: 
+q_bar = {1.0101, 0.990099}, q_bar_old = {-1e+10, -1e+10} 
+Solution routine, time elapsed: 3.834364 s
+122 iterations to convergence 
+Simulation routine, time elapsed: 12.083103 s
+
+ITERATION 2: 
+q_bar = {1.09281, 1.18718}, q_bar_old = {1.0101, 0.990099} 
+Solution routine, time elapsed: 0.094218 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 12.345692 s
+
+ITERATION 3: 
+q_bar = {1.09281, 1.18718}, q_bar_old = {1.09281, 1.18718} 
+Solution routine, time elapsed: 0.094202 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 12.344984 s
+
+
+
+
+Nx = 2000
+
+ITERATION 1: 
+q_bar = {1.0101, 0.990099}, q_bar_old = {-1e+10, -1e+10} 
+Solution routine, time elapsed: 9.790992 s
+124 iterations to convergence 
+Simulation routine, time elapsed: 12.178501 s
+
+ITERATION 2: 
+q_bar = {1.0928, 1.18718}, q_bar_old = {1.0101, 0.990099} 
+Solution routine, time elapsed: 0.236890 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 12.245521 s
+
+ITERATION 3: 
+q_bar = {1.0928, 1.18718}, q_bar_old = {1.0928, 1.18718} 
+Solution routine, time elapsed: 0.236896 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 12.362041 s
+
+
+
+Nx = 3000
+
+ITERATION 1: 
+q_bar = {1.0101, 0.990099}, q_bar_old = {-1e+10, -1e+10} 
+Solution routine, time elapsed: 18.261715 s
+124 iterations to convergence 
+Simulation routine, time elapsed: 1.207153 s
+
+ITERATION 2: 
+q_bar = {1.09063, 1.18654}, q_bar_old = {1.0101, 0.990099} 
+Solution routine, time elapsed: 0.441772 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 1.192875 s
+
+ITERATION 3: 
+q_bar = {1.09063, 1.18654}, q_bar_old = {1.09063, 1.18654} 
+Solution routine, time elapsed: 0.441760 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 1.202269 s
+
+
+
+Nx = 4000
+
+ITERATION 1: 
+q_bar = {1.0101, 0.990099}, q_bar_old = {-1e+10, -1e+10} 
+Solution routine, time elapsed: 29.712004 s
+124 iterations to convergence 
+Simulation routine, time elapsed: 1.208213 s
+
+ITERATION 2: 
+q_bar = {1.09063, 1.18654}, q_bar_old = {1.0101, 0.990099} 
+Solution routine, time elapsed: 0.719082 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 1.195035 s
+
+ITERATION 3: 
+q_bar = {1.09063, 1.18654}, q_bar_old = {1.09063, 1.18654} 
+Solution routine, time elapsed: 0.719232 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 1.197012 s
+
+
+
+Nx = 8000
+
+
+ITERATION 1: 
+q_bar = {1.0101, 0.990099}, q_bar_old = {-1e+10, -1e+10} 
+Solution routine, time elapsed: 98.547297 s
+124 iterations to convergence 
+Simulation routine, time elapsed: 1.209413 s
+
+ITERATION 2: 
+q_bar = {1.09063, 1.18654}, q_bar_old = {1.0101, 0.990099} 
+Solution routine, time elapsed: 2.383849 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 1.206096 s
+
+ITERATION 3: 
+q_bar = {1.09063, 1.18654}, q_bar_old = {1.09063, 1.18654} 
+Solution routine, time elapsed: 2.383953 s
+3 iterations to convergence 
+Simulation routine, time elapsed: 1.202417 s
