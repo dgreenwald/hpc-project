@@ -116,88 +116,197 @@
 
 \section{Model}
 
-\begin{frame}
-  \frametitle{Agent's Problem}
-  \begin{itemize}[<+->]
-  \item Each infinitely-lived agent (indexed by $i$) maximizes
-    \[ V(\theta_{it}) = \E_t \sum_{j=0}^\infty \beta^j u(c_{i,t+j}(\theta_{i,t+j})) \]
-    at each time $t$.
-    \begin{itemize}[<+->]
-    \item $\theta_{i,t+j}$: state of the world at time $t+j$.
-    \item $c_{i,t+j}$: state-contingent consumption plan at time $t+j$.
-    \item $\beta$: discount factor (patience).
-    \item $u$: utility function (enjoyment of consumption).
-    \item $\E_t$: conditional expectation given time $t$ information.
-    \end{itemize}
-  \end{itemize}
-\end{frame}
+% \begin{frame}
+%   \frametitle{Agent's Problem}
+%   \begin{itemize}[<+->]
+%   \item Each infinitely-lived agent (indexed by $i$) maximizes
+%     \[ V(\theta_{it}) = \E_t \sum_{j=0}^\infty \beta^j u(c_{i,t+j}(\theta_{i,t+j})) \]
+%     at each time $t$.
+%     \begin{itemize}[<+->]
+%     \item $\theta_{i,t+j}$: state of the world at time $t+j$.
+%     \item $c_{i,t+j}$: state-contingent consumption plan at time $t+j$.
+%     \item $\beta$: discount factor (patience).
+%     \item $u$: utility function (enjoyment of consumption).
+%     \item $\E_t$: conditional expectation given time $t$ information.
+%     \end{itemize}
+%   \end{itemize}
+% \end{frame}
 
 \begin{frame}
   \frametitle{Environment}
   \begin{itemize}[<+->]
-  \item The economy can either be in a state of recession $(z_t = 0)$, or expansion $(z_t = 1)$.
-  \item Agents can either be unemployed $(e_{it} = 0)$, or employed $(e_{it} = 1)$.
-  \item Agents earn labor income when employed, and unemployment benefits when unemployed. Wages are higher in expansions than recessions.
+  \item The economy has a macro state $z$ that can correspond to either recession $(z = 0)$, or expansion $(z = 1)$.
+  \item Infinitely-lived agents (indexed by $i$) can either be unemployed $(e_{it} = 0)$, or employed $(e_{it} = 1)$.
+  \item Define $s_i = (z, e_i)$, and assume that $s_i$ follows a Markov chain with transition matrix $P$.
+  \item Agents' income depends on both macro state and employment state, denote by $y(s_i)$.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Borrowing and Saving}
+  \begin{itemize}[<+->]
+  \item Agents can save and borrow from each other using one-period loans.
+  \item Equivalently: agents hold positive or negative positions in a one-period risk free bond, denoted by $b_i$.
+  \item You buy (sell) this bond at market price $q$ today, and receive (pay) one unit of consumption next period.
+  \item At equilibrium, $q$ must be set so that the market clears in each period (total saving equals total borrowing).
+  \item Each agent has an identical borrowing limit $b_i \ge -\bar{b}$.
+  \end{itemize}
+\end{frame}
+
+% \begin{frame}
+%   \frametitle{Optimality}
+%   \begin{itemize}[<+->]
+%   \item Each agent's policy at time $t$ depends on current wealth ($x_{it}$), current bond price $(q_t)$, and current state $s_{it} = (z_t, e_{it})$.
+%   \item Optimality condition
+%     \[ q_t u'(c_t(x_{it}, q_t, s_{it})) \ge \beta \E_t u'(c_{t+1}(x_{i,t+1}, q_{t+1}, s_{i,t+1})) \]
+%     with equality as long as $b_{it} > -\bar{b}$.
+%   \item If $u$ is well behaved, then solution $\{c_t\}$ is uniquely defined by this equation.
+%   \item Problem: you don't know the distribution of $q_{t+1}$.
+%   \item Solution: have agents assume that $q_{t+1} = \tilde{q}(z_{t+1})$. We will want to choose $\tilde{q}(z_{t+1})$ so that it approximates $q_{t+1}$ well (or is at least unbiased).
+%   \end{itemize}
+% \end{frame}
+
+\begin{frame}
+  \frametitle{Optimality Conditions}
+  \begin{itemize}
+  \item Need to determine optimal policy of the agent ($c_i$ and $b_i$) as functions $(x_i, q, s_i)$, where $x_i$ is starting wealth (from previous bonds).
+  \item Optimal policy uniquely determined by
+    \begin{equation*}
+      q u'(c_i) \ge \beta \E \left[ u'(c_i') | s_i \right]
+    \end{equation*}
     \begin{itemize}
-    \item Total income given by $y(z_t, e_{it})$.
+    \item Must hold with equality for $b_i > -\bar{b}$ (complementary slackness).
+    \item $\beta$ is the discount factor (patience).
+    \item $\E$ is the expectation operator.
+    \item Primes represent next values (and derivatives --- sorry!).
     \end{itemize}
-  \item $z_t$ and $e_{it}$ follow a joint Markov chain for each agent, with transition matrix $P$.
   \end{itemize}
 \end{frame}
 
-\begin{frame}
-  \frametitle{Asset Space}
-  \begin{itemize}[<+->]
-  \item Agents can save and borrow from each other risk-free.
-  \item Can think of this as agents holding long (positive) and short (negative) positions in a bond ($b_{it}$) that you buy for some price $(q_t)$ today, and which pays 1 unit of consumption next period.
-  \item Interest rate (equivalently, bond price) is set so that the market clears in each period (total saving equals total borrowing).
-  \item Each agent has the same borrowing limit $-\bar{b}$.
-  \end{itemize}
-\end{frame}
+\section{Solution Algorithm}
 
 \begin{frame}
-  \frametitle{Optimality}
-  \begin{itemize}[<+->]
-  \item Each agent's policy at time $t$ depends on current wealth ($x_{it}$), current bond price $(q_t)$, and current state $s_{it} = (z_t, e_{it})$.
-  \item Optimality condition
-    \[ q_t u'(c_t(x_{it}, q_t, s_{it})) \ge \beta \E_t u'(c_{t+1}(x_{i,t+1}, q_{t+1}, s_{i,t+1})) \]
-    with equality as long as $b_{it} > -\bar{b}$.
-  \item If $u$ is well behaved, then solution $\{c_t\}$ is uniquely defined by this equation.
-  \item Problem: you don't know the distribution of $q_{t+1}$.
-  \item Solution: have agents assume that $q_{t+1} = \tilde{q}(z_{t+1})$. We will want to choose $\tilde{q}(z_{t+1})$ so that it approximates $q_{t+1}$ well (or is at least unbiased).
-  \end{itemize}
-\end{frame}
-
-\section{Computational Method: Solution}
-
-\begin{frame}
-  \frametitle{Solution}
+  \frametitle{Solution Algorithm}
   \begin{itemize}[<+->]
   \item Want to solve for optimal consumption policy $c(x, q, s)$.
-  \item Since $x$ and $q$ are continuous variables, this is an infinite-dimensional object, so approximate on a set of gridpoints $(\bar{x}_1, \ldots, \bar{x}_{N_x})$, $(\bar{q}_1, \ldots, \bar{q}_{N_q})$, and use bilinear interpolation between gridpoints.
+  \item Since $x$ and $q$ are continuous variables, this is an infinite-dimensional object, so approximate on a set of gridpoints $(\bar{x}_0, \ldots, \bar{x}_{N_x-1})$, $(\bar{q}_1, \ldots, \bar{q}_{N_q-1})$, and use bilinear interpolation between gridpoints.
   \item Strategy: initialize $c^0$ with some reasonable starting point (i.e., consume all assets), and iterate on
-    \[ q u'(c^{n+1}(x_i, q, s_i)) \ge \beta \sum_{s_i'} P(s_i, s_i') u'(c^n(x_i', q', s_i')) \]
-    until $\max(c^{n+1} - c^n) < \eps$.
+    \begin{equation}
+      \label{eq:foc}
+      q u'(c^{n+1}(x_i, q, s_i)) \ge \beta \sum_{s_i'} P(s_i, s_i') u'(c^n(x_i', q', s_i'))
+    \end{equation}
+    until $\max( | c^{n+1} - c^n | ) < \eps$.
+    %% \item This means leaving $(c^n, c^{n+1})$ arrays in device memory at all times, and updating each step.
   \end{itemize}
 \end{frame}
 
 
 \begin{frame}
-  \frametitle{Solution Algorithm}
+  \frametitle{Endogenous Grid Method}
   \begin{itemize}[<+->]
-  \item Use workgroups of size $(K_x, 1, N_s)$ (recall $N_s = 4$).
-  \item Global index $(i, j, k)$.
-  \item Step 1: calculate $c^n(\bar{x}_i, \tilde{q}(\bar{s}_k), \bar{s}_k)$ in local memory using bilinear interpolation (easy because grid is known).
+  \item Simple method: for each current gridpoint $(x_i, q, s_i)$, solve \eqref{eq:foc} using a nonlinear equation solver.
+  \item This is slow, requires many guesses and function evaluations for each gridpoint.
+  \item Better: start on grid of bond holdings, exploit the fact that $x_i' = b_i + y(s_i')$, and then invert \eqref{eq:foc} using
+    \[ c_i^* = (u')^{-1} \left\{ \beta q^{-1} \sum_{s'} P(s,s') u'(c^n(b_i + y(s_i'), \tilde{q}', s')) \right\} \]
+  \item This defines a $(b_i, c_i^*)$ correspondence, but we can recover starting wealth $x_i^*$ using the budget constraint $x_i^* + y(s_i) = c_i^* + b_i$, to obtain correspondence $(x_i^*, c_i^*)$.
+  \item However, $x_i^*$ does not fall on our original grid, but is an output of the algorithm, so the set of $x_i^*$ is called an \emph{endogenous} grid.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Endogenous Grid Steps}
+  \begin{itemize}
+  \item Use workgroups of size $(K_x, 1, N_s)$, where $K_x$ is some local $x$ size.
+  \item Step 1: calculate $c^n(b_i + y(s_i'), \tilde{q}, s_i')$ using bilinear interpolation (easy because grid is known) and store in local memory.
   \item Step 2: calculate
-    \[ \E_t c^n | \bar{s}_k = \sum_m P(\bar{s}_k, \bar{s}_m) c^n(\bar{x}_i, \tilde{q}(\bar{s}_m), \bar{s}_m) \]
+    \[ \E \left[ c^n(b_i + y(s_i'), \tilde{q}, s_i') | s_i \right] = \sum_m P(s_i, s_i') c^n(x_i, \tilde{q}, s') \]
     using previous results.
+  \item Step 3: invert \eqref{eq:foc} to obtain $(c_i^*, x_i^*)$ correspondence given $(q, s_i)$.
   \end{itemize}
 \end{frame}
 
 \begin{frame}
-  \frametitle{Solution Algorithm}
+  \frametitle{Recovering Original Grid}
   \begin{itemize}[<+->]
-  \item Step 3: invert optimality condition to obtain 
+  \item No good if each $(q, s_i)$ associated with unique grid, need to get back from endogenous $x_i^*$ grid onto original $x_i$ grid.
+  \item For each $x_i$ gridpoint, search to find corresponding bin on $x_i^*$ grid, and perform linear interpolation to find $c(x_i, q, s_i)$.
+  \item Problem: the relevant $x_i^*$ points are distributed across work groups.
+  \item Solution: load the entire $x_i$ grid one $(K_x \times 1)$ sized block at a time into each work group.
+  \item Each work item takes one $x_i$ from this block, and checks if it falls in that group's $x_i^*$ grid.
+  \item If so, search for exact bin (using bisection) and interpolate.
+  \item Need to overlap the work groups so that every point will fall into one of these intervals.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Data Transfer and Convergence}
+  \begin{itemize}[<+->]
+  \item To avoid read/write delays, keep arrays for current and previous $c$ array on the device at all times.
+  \item After each iteration, check (on device, in parallel) whether $| c^{n+1} - c^n | \ge \eps$ for each work item. If so, not done!
+  \item No global write issues because we only care if \emph{any} points are too far.
+  \item Only data transfer between host and device on each iteration is flag indicating convergence, arrays written/read only once.
+  \end{itemize}
+\end{frame}
+
+% \begin{frame}
+%   \frametitle{Recovering Original Grid}
+%   \begin{itemize}
+%   \item Each work item takes one $x_i$ from this block, and checks if it falls in that group's $x_i^*$ grid.
+%   \item If so, search for exact bin (using bisection) and interpolate.
+%   \item Need to overlap the work groups so that every point will fall into one of these intervals.
+%     \begin{itemize}
+%     \item Work group 1: $(\bar{x}_0,\ldots, \bar{x}_{K_x - 1})$
+%     \item Work group 2: $(\bar{x}_{K_x - 1}, \ldots, \bar{x}_{2 K_x - 2})$
+%     \item etc...
+%     \end{itemize}
+%   \end{itemize}
+% \end{frame}
+
+\section{Simulation}
+
+\begin{frame}
+  \frametitle{Simulation}
+  \begin{itemize}
+  \item Solution results from the previous section tell the agents what to do given $(x_i, q, s_i)$.
+  \item Apply solution to large-scale simulation (many agents, many periods) to obtain aggregate results.
+  \item Main obstacle: need to solve for the unique $q$ that clears the bond market in \emph{every} period.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Simulation Algorithm}
+  \begin{itemize}
+  \item Each period, 1-d parallelization using work groups of $K_{SIM}$ agents.
+  \item Given a guess for $q$, random draws of $s_i$, and the $x_i$ implied by past behavior, solve for $c_i$ and $b_i$.
+  \item Add $b_i$ across agents using a reduction algorithm.
+    \begin{itemize}
+    \item Step 1: to add all assets in a work group.
+    \item Step 2: kernel to add assets across work groups.
+    \end{itemize}
+  \item Check total assets and adjust $q$ accordingly (bisection).
+  \item Iterate until market clearing, then move to next period.
+  \end{itemize}
+\end{frame}
+
+\section{Meta Routine}
+
+\begin{frame}
+  \frametitle{``Meta'' Routine}
+  \begin{itemize}
+  \item All the previous steps assumed a guess for $\tilde{q}(z)$, the average bond price in each macro ($z$) state.
+  \item Want these expectations to be unbiased.
+  \item Starting with some guess for $\tilde{q}$, run the entire algorithm, and calculate sample means of bond prices in each $z$ state.
+  \item If sample means match $\tilde{q}$ within tolerance, you are done.
+  \item Otherwise, restart the routine using the previous sample means as $\tilde{q}$.
+  \end{itemize}
+\end{frame}
+
+\section{Performance}
+
+\begin{frame}
+  \frametitle{Performance}
+  \begin{itemize}
+  \item To be written...
   \end{itemize}
 \end{frame}
 
