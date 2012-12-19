@@ -310,8 +310,8 @@ kernel void solve_iter(global double* c_all, global double* c_old,
   return;
 }
 
-kernel void sim_psums(global double* x_sim, constant double* y_sim,
-                      constant int* z_sim, constant int* e_sim,
+kernel void sim_psums(global double* x_sim, global double* y_sim,
+                      global int* z_sim, global int* e_sim,
                       global double* c_all, constant double* params,
                       constant double* x_grid, constant double* q_grid, global double* a_psums,
                       double q, int tt,
@@ -415,8 +415,8 @@ kernel void add_psums(global double* psums, global double* sum,
 
 }
 
-kernel void sim_update(global double* x_sim, constant double* y_sim,
-                       constant int* z_sim, constant int* e_sim,
+kernel void sim_update(global double* x_sim, global double* y_sim,
+                       global int* z_sim, global int* e_sim,
                        global double* c_all, constant double* params,
                        constant double* x_grid, constant double* q_grid,
                        double q, int tt)
