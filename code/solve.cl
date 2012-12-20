@@ -1,14 +1,5 @@
 #pragma OPENCL EXTENSION cl_khr_fp64: enable
 
-#define BET params[0]
-#define GAM params[1]
-#define X_MIN params[2]
-#define X_MAX params[3]
-#define Q_MIN params[4]
-#define Q_MAX params[5]
-#define KK params[6]
-#define TOL params[7]
-
 // bisection lookup algorithm
 int2 bisect(local double* grid, double newval, int2 bnds, int gs)
 {
@@ -38,8 +29,7 @@ double interp2(global double* const f_all, double b_x, double b_q,
 
 kernel void solve_iter(global double* c_all, global double* c_old,
                        constant double* x_grid, constant double* q_grid, constant double* y_grid,
-                       constant double* P, constant double* q_bar,
-                       constant double* params,  global int* done,
+                       constant double* P, constant double* q_bar, global int* done,
                        local double* dU_next_loc, local double* EV_loc,
                        local double* x_endog_loc, local double* c_endog_loc)
 {
@@ -56,17 +46,6 @@ kernel void solve_iter(global double* c_all, global double* c_old,
     x_i, q_i, EdU_i, y_i, c_min;
 
   int2 bnds;
-
-  // Unpack parameters
-
-  // double bet = params[0];
-  double gam = params[1];
-  double x_min = params[2];
-  // double x_max = params[3];
-  double q_min = params[4];
-  // double q_max = params[5];
-  // double kk = params[6];
-  // double tol = params[7];
 
   // Initialize local done variable
 
@@ -104,7 +83,7 @@ kernel void solve_iter(global double* c_all, global double* c_old,
     {
       // Calculate current step error
       // err_i = fabs(V_all[NS*(NQ*gx + gq) + gs] - V_old[NS*(NQ*gx + gq) + gs]);
-      // if (err_i > tol)
+      // if (err_i > TOL)
       if (fabs(c_all[NS*(NQ*gx + gq) + gs] - c_old[NS*(NQ*gx + gq) + gs]) > TOL)
         done_loc = 0;
 
@@ -129,13 +108,13 @@ kernel void solve_iter(global double* c_all, global double* c_old,
         }
 
       q_next = q_bar[gs/NZ];
-      jq = floor((NQ-1)*(q_next - q_min)/(Q_MAX - q_min));
+      jq = floor((NQ-1)*(q_next - Q_MIN)/(Q_MAX - Q_MIN));
       b_q = (q_next - q_grid[jq])/(q_grid[jq+1] - q_grid[jq]);
 
       y_i = y_grid[gs];
 
       // V_next_loc[NS*lx + gs] = interp2(V_all, b_x, b_q, jx, jq, gs);
-      dU_next_loc[NS*lx + gs] = pow(interp2(c_all, b_x, b_q, jx, jq, gs), -gam);
+      dU_next_loc[NS*lx + gs] = pow(interp2(c_all, b_x, b_q, jx, jq, gs), -GAM);
 
       /*
         printf("(%d, %d, %d): V_next_loc = %g, dU_next_loc = %g, c = %g \n",
@@ -164,7 +143,7 @@ kernel void solve_iter(global double* c_all, global double* c_old,
           EdU_i += P[NS*is + gs]*dU_next_loc[NS*lx + is];
         }
 
-      c_endog_loc[NS*lx + gs] = pow(BET*EdU_i/q_i, -1/gam);
+      c_endog_loc[NS*lx + gs] = pow(BET*EdU_i/q_i, -1/GAM);
       x_endog_loc[NS*lx + gs] = c_endog_loc[NS*lx + gs] + x_grid[jx]*q_i - y_i;
 
       /*
@@ -237,18 +216,18 @@ kernel void solve_iter(global double* c_all, global double* c_old,
           // Boundary case
           if (get_group_id(0) == 0 && x_i < x_endog_loc[gs])
             {
-              b_x = (x_i - x_min)/(x_endog_loc[gs] - x_min);
+              b_x = (x_i - X_MIN)/(x_endog_loc[gs] - X_MIN);
 
-              c_min = y_i + (1 - q_i)*x_min;
+              c_min = y_i + (1 - q_i)*X_MIN;
               c_all[NS*(NQ*ix + gq) + gs]= max(c_min + b_x*(c_endog_loc[gs] - c_min), 1e-6);
               // EV_i = EV_loc[gs];
-              // V_i = pow(c_i, 1-gam)/(1-gam) + bet*EV_i;
+              // V_i = pow(c_i, 1-GAM)/(1-GAM) + BET*EV_i;
 
               /*
                 if (gq == 0 && gs == 0)
                 {
                 printf("(%d, %d, %d): jx = %d, x_i = %g, xlo = %g, xhi = %g \n",
-                ix, gq, gs, jx, x_i, x_min, x_endog_loc[gs]);
+                ix, gq, gs, jx, x_i, X_MIN, x_endog_loc[gs]);
                 printf("(%d, %d, %d): jx = %d, c_i = %g, clo = %g, chi = %g \n",
                 ix, gq, gs, jx, c_i, y_i, c_endog_loc[gs]);
                 }
@@ -274,7 +253,7 @@ kernel void solve_iter(global double* c_all, global double* c_old,
               // interpolate to calculate c, EV, then calculate V
               c_all[NS*(NQ*ix + gq) + gs] = max(c_endog_loc[NS*jx + gs] + b_x*(c_endog_loc[NS*(jx+1) + gs] - c_endog_loc[NS*jx + gs]), 1e-6);
               // EV_i = EV_loc[NS*jx + gs] + b_x*(EV_loc[NS*(jx+1) + gs] - EV_loc[NS*jx + gs]);
-              // V_i = pow(c_i, 1-gam)/(1-gam) + bet*EV_i;
+              // V_i = pow(c_i, 1-GAM)/(1-GAM) + BET*EV_i;
 
               /*
                 if ((get_group_id(0) == 0) && gq == 0 && gs == 0)
@@ -312,22 +291,13 @@ kernel void solve_iter(global double* c_all, global double* c_old,
 
 kernel void sim_psums(global double* x_sim, global double* y_sim,
                       global int* z_sim, global int* e_sim,
-                      global double* c_all, constant double* params,
-                      constant double* x_grid, constant double* q_grid, global double* a_psums,
+                      global double* c_all, constant double* x_grid, constant double* q_grid, 
+		      global double* a_psums,
                       double q, int tt,
                       local double* a_psums_loc)
 {
   double x, y, a, c, b_x, b_q;
   int jx, jq, js;
-
-  // double bet = params[0];
-  // double gam = params[1];
-  double x_min = params[2];
-  // double x_max = params[3];
-  double q_min = params[4];
-  // double q_max = params[5];
-  // double kk = params[6];
-  // double tol = params[7];
 
   int gsim = get_global_id(0);
   int lsim = get_local_id(0);
@@ -345,8 +315,8 @@ kernel void sim_psums(global double* x_sim, global double* y_sim,
   x = x_sim[NSIM*tt + gsim];
   y = y_sim[NSIM*tt + gsim];
 
-  jx = (NX - 1)*pow((x - x_min)/(X_MAX - x_min), KK);
-  jq = (NQ - 1)*(q - q_min)/(Q_MAX - q_min);
+  jx = (NX - 1)*pow((x - X_MIN)/(X_MAX - X_MIN), KK);
+  jq = (NQ - 1)*(q - Q_MIN)/(Q_MAX - Q_MIN);
   js = NE*z_sim[tt] + e_sim[NSIM*tt + gsim];
 
   /*
@@ -417,19 +387,11 @@ kernel void add_psums(global double* psums, global double* sum,
 
 kernel void sim_update(global double* x_sim, global double* y_sim,
                        global int* z_sim, global int* e_sim,
-                       global double* c_all, constant double* params,
-                       constant double* x_grid, constant double* q_grid,
+                       global double* c_all, constant double* x_grid, constant double* q_grid,
                        double q, int tt)
 {
   double x, y, a, c, b_x, b_q;
   int jx, jq, js;
-
-  double x_min = params[2];
-  // double x_max = params[3];
-  double q_min = params[4];
-  // double q_max = params[5];
-  // double kk = params[6];
-  // double tol = params[7];
 
   int gsim = get_global_id(0);
   int lsim = get_local_id(0);
@@ -442,15 +404,15 @@ kernel void sim_update(global double* x_sim, global double* y_sim,
   x = x_sim[NSIM*tt + gsim];
   y = y_sim[NSIM*tt + gsim];
 
-  jx = (NX - 1)*pow((x - x_min)/(X_MAX - x_min), KK);
-  jq = (NQ - 1)*(q - q_min)/(Q_MAX - q_min);
+  jx = (NX - 1)*pow((x - X_MIN)/(X_MAX - X_MIN), KK);
+  jq = (NQ - 1)*(q - Q_MIN)/(Q_MAX - Q_MIN);
   js = NE*z_sim[tt] + e_sim[NSIM*tt + gsim];
 
   b_x = (x - x_grid[jx])/(x_grid[jx+1] - x_grid[jx]);
   b_q = (q - q_grid[jq])/(q_grid[jq+1] - q_grid[jq]);
 
   c = interp2(c_all, b_x, b_q, jx, jq, js);
-  a = max(x + y - c, q*x_min);
+  a = max(x + y - c, q*X_MIN);
 
   x_sim[NSIM*(tt+1) + gsim] = a/q;
 
