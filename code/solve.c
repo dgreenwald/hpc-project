@@ -403,11 +403,13 @@ cl_int main(cl_int argc, char **argv)
   // Allocate device simulation memory
   cl_mem x_sim_buf = alloc_dbuf(ctx, Nsim*Nt, 1, 1);
   cl_mem y_sim_buf = alloc_dbuf(ctx, Nsim*Nt, 1, 0);
-  cl_mem a_psums_buf = alloc_dbuf(ctx, Ngrps_sim, 1, 1);
   cl_mem a_net_buf = alloc_dbuf(ctx, 1, 1, 1);
 
   cl_mem z_sim_buf = alloc_ibuf(ctx, Nt, 1, 0);
   cl_mem e_sim_buf = alloc_ibuf(ctx, Nsim*Nt, 1, 0);
+
+  cl_mem a_psums_buf = alloc_dbuf(ctx, Ngrps_sim, 1, 1);
+  cl_mem coeffs_buf = alloc_dbuf(ctx, Nx*Nq*Ns, 1, 1);
 
   // Initialize simulation arrays
   cl_double draw;
@@ -503,6 +505,8 @@ cl_int main(cl_int argc, char **argv)
   sprintf(buildOptions, "-DNX=%d -DNX_LOC=%d -DNX_PAD=%d -DNX_TOT=%d -DNX_BLKS=%d -DNQ=%d -DNZ=%d -DNE=%d -DNS=%d"
           " -DNSIM=%d -DNSIM_LOC=%d -DNT=%d -DNGRPS_SIM=%d -DBET_TEST=%f, -DGAM_TEST=%f",
           Nx, Nx_loc, Nx_pad, Nx_tot, Nx_blks, Nq, Nz, Ne, Ns, Nsim, Nsim_loc, Nt, Ngrps_sim, bet, gam);
+
+  printf("%s \n", buildOptions);
 
   // knl = kernel_from_string(ctx, knl_text, "solve", buildOptions);
   cl_program prg = program_from_string(ctx, knl_text, buildOptions);
