@@ -27,6 +27,14 @@ double interp2(global double* const f_all, double b_x, double b_q,
   return (f_0 + b_x*(f_1 - f_0));
 }
 
+double interp2_coeffs(global double* const coeffs, double x, double q, int jx, int jq, int js)
+{
+    return coeffs[4*(NS*((NQ-1)*jx + jq) + js)]
+    + coeffs[4*(NS*((NQ-1)*jx + jq) + js) + 1]*x
+    + coeffs[4*(NS*((NQ-1)*jx + jq) + js) + 2]*q
+    + coeffs[4*(NS*((NQ-1)*jx + jq) + js) + 3]*x*q;
+}
+
 kernel void solve_iter(global double* c_all, global double* c_old,
                        constant double* x_grid, constant double* q_grid, constant double* y_grid,
                        constant double* P, constant double* q_bar, global int* done,
@@ -289,10 +297,64 @@ kernel void solve_iter(global double* c_all, global double* c_old,
   return;
 }
 
+kernel void calc_coeffs(global double* f_all, global double* coeffs,
+                        constant double* x_grid, constant double* q_grid)
+{
+  int gx = get_global_id(0);
+  int gq = get_global_id(1);
+  int gs = get_global_id(2);
+
+  if (gx < NX - 1)
+    {
+
+      double f[4], x[2], q[2];
+      double scale;
+
+      f[0] = f_all[NS*(NQ*gx + gq) + gs];
+      f[1] = f_all[NS*(NQ*gx + gq + 1) + gs];
+      f[2] = f_all[NS*(NQ*(gx+1) + gq) + gs];
+      f[3] = f_all[NS*(NQ*(gx+1) + gq + 1) + gs];
+
+      x[0] = x_grid[gx];
+      x[1] = x_grid[gx+1];
+
+      q[0] = q_grid[gq];
+      q[1] = q_grid[gq+1];
+
+      scale = 1/((x[1] - x[0])*(q[1] - q[0]));
+
+      // printf("f[0] = %g, x[0] = %g, q[0] = %g \n", f[0], x[0], q[0]);
+
+      coeffs[4*(NS*((NQ-1)*gx + gq) + gs)] = scale*(x[1]*q[1]*f[0] - x[1]*q[0]*f[1] - x[0]*q[1]*f[2] + x[0]*q[0]*f[3]);
+      coeffs[4*(NS*((NQ-1)*gx + gq) + gs) + 1] = scale*(-q[1]*f[0] + q[0]*f[1] + q[1]*f[2] - q[0]*f[3]);
+      coeffs[4*(NS*((NQ-1)*gx + gq) + gs) + 2] = scale*(-x[1]*f[0] + x[1]*f[1] + x[0]*f[2] - x[0]*f[3]);
+      coeffs[4*(NS*((NQ-1)*gx + gq) + gs) + 3] = scale*(f[0] - f[1] - f[2] + f[3]);
+
+      /*
+      printf("coeffs = (%f, %f, %f, %f) \n",
+             coeffs[4*(NS*((NQ-1)*gx + gq) + gs)],
+             coeffs[4*(NS*((NQ-1)*gx + gq) + gs) + 1],
+             coeffs[4*(NS*((NQ-1)*gx + gq) + gs) + 2],
+             coeffs[4*(NS*((NQ-1)*gx + gq) + gs) + 3]);
+
+      printf("approx f[0] = %g, true f[0] = %g \n",
+             coeffs[4*(NS*((NQ-1)*gx + gq) + gs)] +
+             coeffs[4*(NS*((NQ-1)*gx + gq) + gs) + 1]*x[0] +
+             coeffs[4*(NS*((NQ-1)*gx + gq) + gs) + 2]*q[0] +
+             coeffs[4*(NS*((NQ-1)*gx + gq) + gs) + 3]*x[0]*q[0], f[0]);
+      */
+
+      // printf("coeffs[%d] = %g \n", (NS*((NQ-1)*gx + gq) + gs), coeffs[4*(NS*((NQ-1)*gx + gq) + gs)]);
+
+    }
+
+  return;
+}
+
 kernel void sim_psums(global double* x_sim, global double* y_sim,
                       global int* z_sim, global int* e_sim,
-                      global double* c_all, constant double* x_grid, constant double* q_grid, 
-		      global double* a_psums,
+                      global double* coeffs, constant double* x_grid, constant double* q_grid,
+                      global double* a_psums,
                       double q, int tt,
                       local double* a_psums_loc)
 {
@@ -319,6 +381,8 @@ kernel void sim_psums(global double* x_sim, global double* y_sim,
   jq = (NQ - 1)*(q - Q_MIN)/(Q_MAX - Q_MIN);
   js = NE*z_sim[tt] + e_sim[NSIM*tt + gsim];
 
+  // printf("sim_psums: coeffs[0] = %g \n", coeffs[4*(NS*((NQ-1)*jx + jq) + js)]);
+
   /*
     if (tt >= 20)
     printf("worker %d: x = %g, jx = %d, jq = %d, js = %d \n", lsim, x, jx, jq, js);
@@ -332,7 +396,9 @@ kernel void sim_psums(global double* x_sim, global double* y_sim,
     printf("worker %d: x = %g, jx = %d, b_x = %g, b_q = %g \n", lsim, x, jx, b_x, b_q);
   */
 
-  c = interp2(c_all, b_x, b_q, jx, jq, js);
+  // c = interp2(c_all, b_x, b_q, jx, jq, js);
+  c = interp2_coeffs(coeffs, x, q, jx, jq, js);
+
   a = x + y - c;
 
   a_psums_loc[lsim] = a;
@@ -387,7 +453,7 @@ kernel void add_psums(global double* psums, global double* sum,
 
 kernel void sim_update(global double* x_sim, global double* y_sim,
                        global int* z_sim, global int* e_sim,
-                       global double* c_all, constant double* x_grid, constant double* q_grid,
+                       global double* coeffs, constant double* x_grid, constant double* q_grid,
                        double q, int tt)
 {
   double x, y, a, c, b_x, b_q;
@@ -411,7 +477,8 @@ kernel void sim_update(global double* x_sim, global double* y_sim,
   b_x = (x - x_grid[jx])/(x_grid[jx+1] - x_grid[jx]);
   b_q = (q - q_grid[jq])/(q_grid[jq+1] - q_grid[jq]);
 
-  c = interp2(c_all, b_x, b_q, jx, jq, js);
+  // c = interp2(c_all, b_x, b_q, jx, jq, js);
+  c = interp2_coeffs(coeffs, x, q, jx, jq, js);
   a = max(x + y - c, q*X_MIN);
 
   x_sim[NSIM*(tt+1) + gsim] = a/q;

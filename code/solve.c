@@ -233,10 +233,8 @@ cl_int main(cl_int argc, char **argv)
   const cl_int Nz = 2;
   const cl_int Ne = 2;
   const cl_int Ns = Nz*Ne;
-  // const cl_int Nsim = 5120;
-  // const cl_int Nsim_loc = 256;
-  const cl_int Nsim = 64;
-  const cl_int Nsim_loc = 4;
+  const cl_int Nsim = 5120;
+  const cl_int Nsim_loc = 256;
   const cl_int Ngrps_sim = (Nsim - 1)/Nsim_loc + 1;
   const cl_int Nt = 1200;
   const cl_int Nburn = 200;
@@ -396,7 +394,7 @@ cl_int main(cl_int argc, char **argv)
   cl_mem e_sim_buf = alloc_ibuf(ctx, Nsim*Nt, 1, 0);
 
   cl_mem a_psums_buf = alloc_dbuf(ctx, Ngrps_sim, 1, 1);
-  // cl_mem coeffs_buf = alloc_dbuf(ctx, Nx*Nq*Ns, 1, 1);
+  cl_mem coeffs_buf = alloc_dbuf(ctx, (Nx-1)*(Nq-1)*Ns*4, 1, 1);
 
   // Initialize simulation arrays
   cl_double draw;
@@ -505,31 +503,37 @@ cl_int main(cl_int argc, char **argv)
   cl_kernel solve_iter_knl = clCreateKernel(prg, "solve_iter", &status);
   CHECK_CL_ERROR(status, "clCreateKernel");
 
-  size_t ldim[3] = {Nx_loc, 1, Ns};
-  // size_t gdim[3] = {ldim[0]*((Nx-1)/(ldim[0]-1) + 1), Nq, Ns};
-  size_t gdim[3] = {Nx_tot, Nq, Ns};
+  size_t ldim_soln[] = {Nx_loc, 1, Ns};
+  size_t gdim_soln[] = {Nx_tot, Nq, Ns};
 
   printf("Nx = %d, Nx_pad = %d \n", Nx, Nx_pad);
-  printf("ldim = (%d, %d, %d) \n", ldim[0], ldim[1], ldim[2]);
-  printf("gdim = (%d, %d, %d) \n", gdim[0], gdim[1], gdim[2]);
+  printf("ldim_soln = (%d, %d, %d) \n", ldim_soln[0], ldim_soln[1], ldim_soln[2]);
+  printf("gdim_soln = (%d, %d, %d) \n", gdim_soln[0], gdim_soln[1], gdim_soln[2]);
 
   // Simulation setup
   cl_int cleared;
   cl_double q_lb, q_ub, q_mid;
 
   // sim_psums kernel
-  size_t ldim_sim[] = {Nsim_loc};
-  size_t gdim_sim[] = {Nsim_loc*((Nsim-1)/Nsim_loc + 1)};
-
   cl_kernel sim_psums_knl = clCreateKernel(prg, "sim_psums", &status);
   CHECK_CL_ERROR(status, "clCreateKernel");
 
-  // add_psums kernel
-  size_t ldim_add[] = {Nsim_loc};
-  size_t gdim_add[] = {Nsim_loc};
+  size_t ldim_sim[] = {Nsim_loc};
+  size_t gdim_sim[] = {Nsim_loc*((Nsim-1)/Nsim_loc + 1)};
 
+  // calc_coeffs kernel
+  cl_kernel calc_coeffs_knl = clCreateKernel(prg, "calc_coeffs", &status);
+  CHECK_CL_ERROR(status, "clCreateKernel");
+
+  size_t ldim_coeffs[] = {Nx_loc, 1, Ns};
+  size_t gdim_coeffs[] = {Nx_loc*((Nx-2)/Nx_loc + 1), Nq-1, Ns};
+
+  // add_psums kernel
   cl_kernel add_psums_knl = clCreateKernel(prg, "add_psums", &status);
   CHECK_CL_ERROR(status, "clCreateKernel");
+
+  size_t ldim_add[] = {Nsim_loc};
+  size_t gdim_add[] = {Nsim_loc};
 
   // sim_psums kernel
 
@@ -576,7 +580,7 @@ cl_int main(cl_int argc, char **argv)
 
           CALL_CL_GUARDED(clEnqueueNDRangeKernel,
                           (queue, solve_iter_knl, /*dimension*/ 3,
-                           NULL, gdim, ldim, 0, NULL, NULL));
+                           NULL, gdim_soln, ldim_soln, 0, NULL, NULL));
 
           CALL_CL_GUARDED(clFinish, (queue));
 
@@ -613,6 +617,31 @@ cl_int main(cl_int argc, char **argv)
                      ix, iq, is, x_grid[ix], c_all[Ns*(Nq*ix + iq) + is], c_init[Ns*(Nq*ix + iq)]);
 #endif
 
+      // PRE-CALCULATE INTERPOLATION COEFFICIENTS
+      get_timestamp(&time1);
+      SET_4_KERNEL_ARGS(calc_coeffs_knl, c_buf, coeffs_buf, x_buf, q_buf);
+
+      CALL_CL_GUARDED(clFinish, (queue));
+
+      CALL_CL_GUARDED(clEnqueueNDRangeKernel,
+                      (queue, calc_coeffs_knl, /*dimension*/ 3,
+                       NULL, gdim_coeffs, ldim_coeffs, 0, NULL, NULL));
+
+      CALL_CL_GUARDED(clFinish, (queue));
+      get_timestamp(&time2);
+
+      elapsed = timestamp_diff_in_seconds(time1,time2);
+      printf("Pre-calculated interpolation coefficients, time elapsed: %f s\n", elapsed);
+
+      /*
+        cl_double* coeffs_arr = malloc(4*(Nx-1)*(Nq-1)*Ns*sizeof(cl_double));
+        read_dbuf(queue, coeffs_buf, coeffs_arr, 4*(Nx-1)*(Nq-1)*Ns);
+        CALL_CL_GUARDED(clFinish, (queue));
+
+        for (int ii = 0; ii < 100; ++ii)
+        printf("coeffs_arr[%d] = %g \n", ii, coeffs_arr[ii]);
+      */
+
       // Loop to convergence over q_bar
       get_timestamp(&time1);
 
@@ -633,7 +662,7 @@ cl_int main(cl_int argc, char **argv)
               q_mid = (cl_double) 0.5*(q_lb + q_ub);
 
               SET_10_KERNEL_ARGS(sim_psums_knl, x_sim_buf, y_sim_buf, z_sim_buf, e_sim_buf,
-                                 c_buf, x_buf, q_buf, a_psums_buf, q_mid, tt);
+                                 coeffs_buf, x_buf, q_buf, a_psums_buf, q_mid, tt);
 
               SET_LOCAL_ARG(sim_psums_knl, 10, Nsim_loc*sizeof(cl_double));
 
@@ -677,7 +706,7 @@ cl_int main(cl_int argc, char **argv)
           if (tt < Nt-1)
             {
               SET_9_KERNEL_ARGS(sim_update_knl, x_sim_buf, y_sim_buf, z_sim_buf, e_sim_buf,
-                                c_buf, x_buf, q_buf, q_mid, tt);
+                                coeffs_buf, x_buf, q_buf, q_mid, tt);
 
               CALL_CL_GUARDED(clEnqueueNDRangeKernel,
                               (queue, sim_update_knl, /*dimension*/ 1,
@@ -765,6 +794,7 @@ cl_int main(cl_int argc, char **argv)
   CALL_CL_GUARDED(clReleaseMemObject, (y_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (P_buf));
   CALL_CL_GUARDED(clReleaseMemObject, (q_bar_buf));
+  CALL_CL_GUARDED(clReleaseMemObject, (coeffs_buf));
   printf("released solution buffers \n");
   CALL_CL_GUARDED(clReleaseProgram, (prg));
   CALL_CL_GUARDED(clReleaseCommandQueue, (queue));
