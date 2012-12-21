@@ -225,7 +225,7 @@ cl_int main(cl_int argc, char **argv)
   // const cl_int Nx = 2000;
   // const cl_int Nx_loc = 128;
   const cl_int Nx = 500;
-  const cl_int Nx_loc = 4;
+  const cl_int Nx_loc = 64;
   const cl_int Nx_pad = Nx + (Nx-2)/(Nx_loc-1);
   const cl_int Nx_tot = Nx_loc*((Nx_pad-1)/Nx_loc + 1);
   const cl_int Nx_blks = (Nx-1)/Nx_loc + 1;
@@ -525,8 +525,8 @@ cl_int main(cl_int argc, char **argv)
   cl_kernel calc_coeffs_knl = clCreateKernel(prg, "calc_coeffs", &status);
   CHECK_CL_ERROR(status, "clCreateKernel");
 
-  size_t ldim_coeffs[] = {Nx_loc, 1, Ns};
-  size_t gdim_coeffs[] = {Nx_loc*((Nx-2)/Nx_loc + 1), Nq-1, Ns};
+  size_t ldim_coeffs[] = {1, 1, 1};
+  size_t gdim_coeffs[] = {Nx-1, Nq-1, Ns};
 
   // add_psums kernel
   cl_kernel add_psums_knl = clCreateKernel(prg, "add_psums", &status);
@@ -659,7 +659,7 @@ cl_int main(cl_int argc, char **argv)
               ++iter;
               // printf("ITERATION %d: \n", iter);
 
-              q_mid = (cl_double) 0.5*(q_lb + q_ub);
+              q_mid = 0.5*(q_lb + q_ub);
 
               SET_10_KERNEL_ARGS(sim_psums_knl, x_sim_buf, y_sim_buf, z_sim_buf, e_sim_buf,
                                  coeffs_buf, x_buf, q_buf, a_psums_buf, q_mid, tt);
