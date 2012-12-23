@@ -1,0 +1,187 @@
+
+\documentclass[a4paper,12pt]{article}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{amsfonts}
+\usepackage{changepage}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{caption}
+
+\newcommand{\sumn}{\sum_{i=1}^{n}}
+\newcommand{\sumt}{\sum_{t=0}^\infty}
+\newcommand{\sumj}{\sum_{j=-\infty}^\infty}
+\newcommand{\fsum}{\frac{1}{n} \sum_{i=1}^n}
+\newcommand{\prodn}{\prod_{i=1}^{n}}
+\newcommand{\intf}{\int_{-\infty}^{\infty}}
+\newcommand{\intz}{\int_0^\infty}
+\newcommand{\limf}{\lim_{n\to \infty}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\bp}{\mathbb{P}}
+\newcommand{\F}{\mathcal{F}}
+\newcommand{\Var}{\text{Var}}
+\newcommand{\Cov}{\text{Cov}}
+\newcommand{\Corr}{\text{Corr}}
+\newcommand{\topr}{\xrightarrow{  p  }}
+\newcommand{\tod}{\xrightarrow{  d  }}
+\newcommand{\blambda}{\bar{\lambda}}
+\newcommand{\htheta}{\hat{\theta}}
+\newcommand{\hbeta}{\hat{\beta}}
+\newcommand{\hmu}{\hat{\mu}}
+\newcommand{\hF}{\hat{F}}
+\newcommand{\sss}{\subsubsection*}
+\newcommand{\simiid}{\stackrel{\text{iid}}{\sim}}
+\newcommand{\eqas}{\stackrel{\text{a.s.}}{=}}
+\newcommand{\eps}{\varepsilon}
+\newcommand{\re}{\text{Re}}
+\newcommand{\im}{\text{Im}}
+
+\allowdisplaybreaks[1]
+
+\numberwithin{equation}{section}
+
+\theoremstyle{definition}
+\newtheorem{thm}{Theorem}
+\newtheorem{claim}{Claim}
+\newtheorem{prop}[thm]{Proposition}
+\newtheorem{defn}{Definition}
+\newtheorem{cor}{Corollary}
+\newtheorem{ex}{Example}
+\newtheorem{exer}{Exercise}
+\newtheorem{lem}[thm]{Lemma}
+\newtheorem{ob}{Observation}
+\newtheorem{fact}{Fact}
+
+\allowdisplaybreaks[1]
+\linespread{1.6}
+% \linespread{1.3}
+
+\begin{document}
+
+\small
+% \footnotesize
+
+\setlength\voffset{-0.75 in}
+
+\changepage{1.5 in}{1 in}{0 in}{-0.5 in}{0 in}{0 in}{0 in}{0 in}{0 in}
+
+% Description of the problem
+
+\section{Description of the Problem}
+
+\subsection{Introduction to Macroeconomics}
+
+Macroeconomics is the subfield of economics that deals with outcomes
+for an entire economy, as opposed to a single market. A standard
+macroeconomic model will seek to describe an economy in which prices
+adjust so that demand equals supply, and such that the interest rates
+on financial assets adjust so that the quantity of financial assets
+sold equals the quantity of financial assets purchased.
+
+For several decades, the trend has been to develop ``microfounded''
+models, in which macro-level behavior like total consumption is
+derived by considering the consumption decision of individual economic
+agents, and then aggregating over many agents' actions to obtain an
+overall result. These microfoundations are designed to keep
+macroeconomic models closer in line with reality, and provide testable
+checks on the theories macroeconomics propose (i.e., if your model is
+correct, then X, Y, and Z should be observed in micro-level data).
+
+However, the task of aggregating over many individual decisions can
+impose serious mathematical difficulties. In particular, macroeconomic
+outcomes may depend on the entire distribution of individual states
+and characteristics across individuals. For example, the behavior of
+an economy with a large degree of wealth inequality may differ from
+one with less inequality, even if the two economies exhibit the same
+average level of wealth. Therefore, modeling the macroeconomy using a
+microfounded model may depend on keeping track of entire distributions
+for each variable --- infinite-dimensional objects that are difficult
+to work with numerically.
+
+These obstacles have often been overcome through the use of
+simplifying, but unrealistic, assumptions, to ensure that the
+distributions of states across agents do not matter, and that the
+overall state of the macroeconomy can be summarized in a few aggregate
+statistics. These assumptions often take the form of perfect insurance
+markets, in which agents can insure against any possible event that
+may occur. Since agents do not like risk, they generally insure away
+all their individual risk, so that their behavior only depends on
+aggregate conditions --- allowing for easy aggregation.
+
+\subsection{The Heterogeneous-Agent Approach}
+
+While these assumptions have allowed for many years of productive
+macroeconomic research, they miss major features of the choices facing
+most individuals. In reality, people face many forms of uninsurable
+risk such as unexpected changes to wages or unemployment. In addition,
+most people only have access to a limited set of financial instruments
+with which to invest, and often face strict borrowing limits,
+especially on unsecured debt, which they cannot exceed.
+
+Incorporating these features into a microfounded macroeconomic model
+leads to what is typically known as a ``heterogeneous-agent'' model,
+in which micro-level differences between agents are important, and the
+entire distribution of individual states must be accounted for. This
+leads to three kinds of problems, all of which are typically
+computationally intensive to overcome. 
+
+\subsubsection{Solution}
+
+The first issue is that removing perfect insurance markets yields a
+much more complicated individual problem, in which agents must
+carefully consider the risks posed by uninsurable fluctuations at all
+times in the future. The optimal policies typically can only be
+calculated numerically, and standard grid-based approximations of
+policy functions are subject to the ``curse of dimensionality'' as the
+number of state variables increases, leading to large computational
+burden for all but the most simple models.
+
+\subsubsection{Simulation}
+
+The second problem posed by a heterogeneous-agent model is that
+macroeconomic behavior now depends on the entire distribution of
+individual states across agents. Therefore, analyzing the behavior
+implied by the model typically involves simulating the behavior of
+thousands of agents, and mechanically aggregating to obtain
+macroeconomic results over thousands of time periods. If prices must
+be set so that markets in goods or financial assets must clear, then
+each period may need to be simulated many times as an algorithm finds
+the correct price. Therefore, simulation can be a computationally
+intensive step even if the underlying model is very simple and easy to
+solve.
+
+\subsubsection{Forecasting}
+
+The final problem is that the agents in a
+realistic model are forward looking, meaning that agents have to have
+some way of forecasting what they expect to occur in the future based
+on current conditions. When current conditions are determined by an
+antire distribution across agents, then it is a challenging task to
+translate that object into a reasonable forecast. Instead, economists
+usually assume that agents use some forecasting rule based on
+aggregate variables. But to be realistic, these rules can lead to
+forecasting error, but should not be particularly biased
+(i.e. everyone should not always forecast incorrectly in the same
+way). But since behavior depends on the forecasting rule, and the bias
+of the forecasting rule depends on behavior, this leads to a
+``fixed-point'' problem that may involve running the solution and
+simulation steps multiple times, adding to the computational burden.
+
+\subsubsection{Computational Performance}
+
+Despite these challenges, many of the computations involved in solving these
+models are highly parallelizable, and should therefore yield massive
+speedup relative to a serial computation. In particular, solving and
+simulating these models often requires the type of repeated simple
+calculation that is perfect for GPU computation. This should allow not
+only for convenience allowed by the reduction in wait times, but much
+more important, allow for more complex models or more accurate
+solutions to become tractable.
+
+\end{document}
