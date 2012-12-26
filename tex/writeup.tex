@@ -42,8 +42,6 @@
 \newcommand{\re}{\text{Re}}
 \newcommand{\im}{\text{Im}}
 
-\allowdisplaybreaks[1]
-
 \numberwithin{equation}{section}
 
 \theoremstyle{definition}
@@ -183,5 +181,364 @@ calculation that is perfect for GPU computation. This should allow not
 only for convenience allowed by the reduction in wait times, but much
 more important, allow for more complex models or more accurate
 solutions to become tractable.
+
+\section{The Model}
+
+This next section will summarize the economic model that is being solved, which will be the foundation for the computational routine. The reader interested in the computational routine only should skip ahead to Section \ref{sec:optim-policy-algor}.
+
+\subsection{Environment}
+
+Time is modeled as a sequence of discrete periods, indexed by $t$
+(although I will typically suppress the dependence of variables on $t$
+in the notation). The economy is populated by a continuum of
+infinitely-lived agents indexed by $i$. Agents earn labor income based
+on their own individual employment state, and the overall state of the
+macroeconomy. The employment state for agent $i$ is denoted $e_i$,
+with $e_i = 1$ when the agent is employed, and $e_i = 0$ when the
+agent is unemployed. The macroeconomic state is denoted $z$, with $z =
+0$ when the economy is in a low-productivity (``recession'') state,
+and $z = 1$ when the economy is in a high-productivity (``expansion'')
+state. Define $s_i = (z, e_i)$ to be the overall state for agent $i$,
+which can take on four possible values, and let $y(s_i)$ be the
+function (identical across individuals) that translates the states
+into an individual's labor income. We will assume that $s_i$ follows a
+Markov chain for each agent with transition matrix $P$. 
+
+In practice, we parameterized the $z$ values, the $P$ matrix, and the $y$ function following Krusell and Smith (1998), which in turn chooses these values to match various empirical features of the macroeconomy. Unlike Krusell and Smith, however, I chose the $y$ function so that agents receive 1/3 of their employed income in the unemployed state, which roughly corresponds to U.S. unemployment insurance. 
+
+\subsection{Preferences}
+
+In each period, agents consume resources. Agents choose
+state-contingent paths of lifetime consumption in each period $t$ to
+maximize
+\begin{equation*} 
+  V_{it} = \E_t \sum_{j=0}^\infty \beta^j u(c_{i,t+j}) 
+\end{equation*} 
+where $V$ is the present discounted value of lifetime consumption, $\E_t$ is the mathematical expectations operator conditional on time $t$ information, $\beta$ is the discount factor (which determines the agent's level of patience), $u$ is a utility funciton representing the benefit an agent gets from some level of consumption in a given period, and $c$ is consumption. Further, $V$ and $c$ should be interpreted as functions that may depend on the state at time $t$ and $t+j$, respectively. We will restrict attention to problems where $u$ is continuously differentiable and strictly concave.
+
+\subsection{Assets}
+
+Agents can save and borrow from each other by holding positive and
+negative positions in a one-period riskless bond. Denote agent $i$'s
+holdings of the bond by $b_i$. Each agent can buy (or sell) one unit
+of the bond at price $q$, in which case they receive (or pay) one unit
+of consumption in the following period. This is equivalent to an
+interest rate of $r = 1/q$. Since there is no outside source of funds,
+in each period $q$ must be set so that total saving equals total
+borrowing, which is known as ``market clearing.'' Mathematically, this
+can be expressed by the condition
+\begin{equation*} 
+\int b_i \,di = 0 
+\end{equation*}
+which must hold in each period.
+
+\subsection{Agent's Problem}
+
+Each agent enters a given period with wealth $x$, where $x$ is the
+amount of the consumption good that the agent is due from his or her
+previous bond purchases ($x_{it} = b_{i,t-1}/q_{t-1}$). Each agent
+solves the problem
+\begin{align*}
+  V(x_i, q, s_i) &= \max_{c_i, b_i} u(c_i) + \beta \E \left[ V(b_i, q', s_i') \, \Bigr| s_i \right] \\
+  \text{subject to}& \\
+  c_i + q b_i &= x_i + y(s_i) \\
+  c_i &\ge 0 \\
+  b_i &\ge -B
+\end{align*}
+where primes (i.e. $x_i'$) represent values of variables in the
+following period.\footnote{Hopefully this is not confusing when primes
+  are also used for derivatives.}
+
+Given our earlier assumptions on the utility function, the agent's optimal policy $c(x, q, s_i)$ is uniquely defined by the first order condition 
+\begin{equation}
+\label{eq:foc}
+  q u'(c(x_i, q, s_i)) \ge \beta \E \left[ u'(c(x_i', q', s_i')) \Bigr| s_i \right]
+\end{equation}
+which must hold with equality for $b_i > -B$, where $b_i = x_i +
+y(s_i) - c_i$. The goal of the solution algorithm will be to solve for this optimal policy function $c$ up to a close approximation.
+
+\section{Optimal Policy Algorithm}
+\label{sec:optim-policy-algor}
+
+\subsection{Strategy and Approximation}
+
+The first computational task is to find the unique function $c(x_i, q,
+s_i)$ that solves the optimality condition \eqref{eq:foc}. In general,
+the solution will proceed by starting with some guess of the policy
+function $c^0$, and then on each step, choosing $c^{n+1}$ to satisfy
+\begin{equation}
+\label{eq:foc-iter}
+  q u'(c^{n+1}(x_i, q, s_i)) \ge \beta \E \left[ u'(c^n(x_i', q', s_i')) \Bigr| s_i \right]
+\end{equation}
+for all $(x_i, q, s_i)$, which again must hold with equality for $b_i > 0$. 
+
+Since $x_i$ and $q$ are continuous variables, the function $c$ is an
+infinite-dimensional object, we must approximate it to be able to
+solve numerically. For this project, we use a simple approximation by
+choosing grids of points $(\bar{x}_1, \ldots, \bar{x}_{N_x})$ and
+$(\bar{q}_1, \ldots, \bar{q}_{N_q})$, and approximate $c$ by defining
+it at all combinations of these gridpoints and the state $s_i$. We can
+then use bilinear interpolation over the $(x_i, q)$ dimension (holding
+$s_i$ fixed) to evaluate the function.
+
+For reasons that will become clear as the algorithm progresses, we
+implement this algorithm in OpenCL using work-groups of size $(K_x, 1,
+N_s)$, with $K_x \le N_x$.
+
+\subsection{Endogenous Grid Method}
+\label{sec:endog-grid-meth}
+
+A simple way to perform an iteration of \eqref{eq:foc-iter} would be to
+use a nonlinear equation solver for each point $(\bar{x}_j, \bar{q}_k,
+\bar{s}_l)$ on the grids defined earlier. However, a nonlinear
+equation solver will typically require many function evaluations to
+find a solution, in addition to the added complexity of the inequality
+constraint, making it a relatively slow and complicated method to
+implement
+
+A better method, assuming that the function $u'$ has a known inverse,
+is to take advantage of the fact that the left side of \eqref{eq:foc} can
+be inverted in closed form (although the right side cannot). Along
+these lines, the improved method is to define a grid over bond
+holdings, $(\bar{b}_0, \ldots, \bar{b}_{N_b-1}$, and solve for the
+right hand side of \eqref{eq:foc} given $(\bar{b}_j, \bar{q}_k,
+\bar{s}_l)$. To perform this task efficiently in parallel, each work
+item with, say, global id $(p, 1, r)$ calculates $u'(\bar{b}_p,
+\tilde{q}(\bar{s}_r), \bar{s}_r)$ and stores the resulting value in
+local memory. Each work-item, again with arbitrary global id $(p, 1,
+r)$, now sums over the terms $P(r, r') u'(\bar{b}_p,
+\tilde{q}(\bar{s}_{r'}), \bar{s}_{r'})$ for $r' = 1, \ldots, N_s$,
+using the previous results. This is the logic for choosing the $s$
+dimension of each work-group to be equal to $N_s$.
+
+With the expectation terms in hand on our $\bar{b}$ grid, we can then
+solve for $c_i$ for each combination $(\bar{b}_j, \bar{q}_k,
+\bar{s}_l)$ using the relation
+\begin{equation*}
+  c_i = u'^{-1} \left\{ \beta \bar{q}_k^{-1} \beta \E \left[ u'(c^n(\bar{b}_j, \tilde{q}(s_i'), s_i')) \Bigr| s_i \right] \right\}
+\end{equation*}
+which allows us to solve \eqref{eq:foc} in one step. Note that we do not
+have to worry about \eqref{eq:foc} holding with equality because at most
+one point on our $\bar{b}$ grid is equal to $-B$. Define $c_j^*$ to be
+the value obtained by solving \eqref{eq:foc} for $b_i = \bar{b}_j$. Then
+we can return to a mapping between $x_i$ and $c_i$ by using the
+definition $x_i = c_i + b_i - y(s_i)$ to solve for the implied
+starting wealth values $x_j^*$ given $c_j^*$ and $\bar{b}_j$.
+
+Applying this algorithm on a given iteration involves many evaluations
+of $c^n$ using bilinear interpolation. As long as we have chosen our
+$\bar{x}$ and $\bar{q}$ grids such that the mappings between some
+value $x_i$ and the nearest lower neighbor $\bar{x}_j$ can be easily
+evaluated, the bilinear interpolation procedure involves only a few
+floating point calculations, requires access to only four points of
+data, and is in general not a major computational burden. In
+particular, we used polynomially spaced grids
+\begin{align*}
+  \bar{x}_j = x_{min} + (x_{max} - x_{min}) \left( \frac{j}{N_x-1} \right)^{k_x}
+  \bar{q}_j = q_{min} + (q_{maq} - q_{min}) \left( \frac{j}{N_q-1} \right)^{k_q}
+\end{align*}
+with $k_x = 0.4$ (more points for $x_i$ small) and $k_q = 1$ (evenly
+spaced).
+
+\subsection{Recovering Original Grid}
+
+The method of Section \ref{sec:endog-grid-meth} established an
+efficient way to solve \eqref{eq:foc} over a grid of values for bond
+holdings $b_i$, establishing a mapping between $x_j^*$ and $c_j^*$ for
+each $\bar{b}_j$. However, in order to be able to perform bilinear
+interpolation in the next iteration, we need to return to a uniform
+grid system for the $x_i$ variable that does not depend on $j$. In
+particular, we will return to our original grid system via linear
+interpolation.
+
+For fixed $\bar{q}_k$ and $\bar{s}_l$, we want to be able to evaluate
+$c^{n+1}(\bar{x}_j, \bar{q}_k, \bar{s}_l)$ for each point in our
+$\bar{x}$ grid. We can do this by finding the relevant values of
+$x_j^*$ such that $x_m^* \le \bar{x}_j \le x_{m+1}^*$, and then
+interpolating accordingly between $c_m^*$ and $c_{m+1}^*$.
+
+There are two related challenges involved in this operation. The first
+is that the $x^*$ grid is unknown (since it is a product of the
+algorithm) and has no known mapping to immediately obtain the correct
+bin given the value $\bar{x}_j$. Therefore, we will have to search for
+the correct bin before interpolating. The second challenge is that
+each work-group holds only a subset of the points of the $x^*$ grid
+for a given $(\bar{q}_k, \bar{s}_l)$ if the $x$ dimension is at all
+large. Since we cannot synchronize across work-groups, a second
+challenge is finding which work group should perform the interpolation
+for each point in the $\bar{x}_i$ grid.
+
+We solved these problems by having each work-group load every element
+of the $\bar{x}$ grid, one $K_x \times 1$ sized block at a time. One
+element of each block is assigned to each work-item, and that
+work-item then checks whether that value of $\bar{x}_j$ falls in that
+work-group's subset of $x^*$ points, which is easily done since the
+$x_j^*$ points are monotonically increasing in $j$. If the value of
+$\bar{x}_j$ is not within that subset, the work-item does nothing and
+proceeds to load its entry from the next block. If the value of
+$\bar{x}_j$ is within that subset, the work-item searches for the
+relevant bin (in local memory) using a simply bisection algorithm, and
+then performs the linear interpolation. Once this is done, the
+work-item updates the relevant value of $c^{n+1}(\bar{x}_j, \bar{q}_k,
+\bar{s}_l)$ in global memory, and moves on to the next block.
+
+The final complication is that points on the $\bar{x}$ grid may fall
+below the bottom of the $x^*$ grid. If we set $\bar{b}_0 = -B$, as we
+do in practice, then we know that these points must be in the
+constrained region with $b_i = -B$, and can correspondingly set $c_i =
+x_i + y(s_i) + B$.
+
+\subsection{Summary}
+
+This completes the algorithm to move from $c^n$ to $c^{n+1}$. To
+summarize, the algorithm proceeds in the following steps.
+
+\begin{enumerate}
+\item Evaluate $\E_t u'(c^n(\bar{b}_j, \tilde{q}(\bar{s}_l),
+  \bar{s}_l))$ forreach $(j,l)$.
+\item Invert \eqref{eq:foc} to construct a $(x_j^*, c_j^*)$ mapping
+  conditional on $\bar{b}_j$.
+\item Load $\bar{x}$ block-by-block into each work-group, checking if
+  points fall in the relevant $x^*$ values, and interpolating if so
+  to recover $c^{n+1}$.
+\end{enumerate}
+
+The algorithm proceeds until the maximum distance between elements of
+$c^n$ and $c^{n+1}$ falls below some tolerance.
+
+\subsection{Implementation in OpenCL}
+
+Most of the specifics of how each work-group and each work-item is assigned has already been described in the preceding sections, so this section will focus on performance and parallelization issues.
+
+It should be clear that all steps of this algorithm can be run in
+parallel, with only a few local synchronizations required. However,
+because of the need to consider the entire list of $\bar{x}$ points in
+each work-group, this algorithm will not scale linearly, and will lose
+efficiency the larger the $\bar{x}$ grid is compared to the local size
+$K_x$. In practice, we found that even for relatively large values of
+$N_x$, the cost of checking irrelevant values of the $\bar{x}$ grid
+appears tolerable. A further challenge is that depending on where
+points on the $\bar{x}$ grid are concentrated relative to the $x^*$
+grid, and so the work done by the various work groups in recovering
+the original grid may be unbalanced, and it is possible that the
+imbalance will increase with the number of $\bar{x}$ points. But
+overall the algorithm is highly parallelizable, and should exhibit
+massive speedup from running in parallel relative to in serial.
+
+\section{Simulation Algorithm}
+\label{sec:simulation-algorithm}
+
+\subsection{Overall Strategy}
+
+In order to determine macroeconomic behavior in a heterogeneous agent
+model, simulation is required. While other methods exist, for example
+keeping track of weights on a histogram, we use the method of simply
+simulating the paths of a large number of agents. The main
+computational challenge in this section is determining the bond price
+in each period of the simulation that makes markets clear.
+
+To initialize the simulation, we initialize agents with zero wealth,
+and assign some random previous states to each agent and to the
+overall economy. The initial condition can be relatively arbitrary, as
+we will use a long ``burn in'' period for which we discard the
+simulation results to ensure that the simulation has had time to lose
+its dependence on initial conditions.
+
+Once the simulation is initialized, we update the simulation
+recursively, period-by-period. At the start of each period $t$, the
+previous period's simulation gives us the starting wealth $x_{it}$ for
+each agent. We then draw the overall state $z_t$ conditional on
+$z_{t-1}$, and then draw $\eps_{it}$ for each $i$ conditional on
+$\eps_{i,t-1}$, $z_{t-1}$, and $z_t$.
+
+Given a guess for $q_t$, the bond price at time $t$, we evaluate
+agents' optimal consumption using the $c$ function obtained from the
+methods of Section \ref{sec:optim-policy-algor}. Given the resulting values of $c_{it}$, we can calculate the implied bond holdings using $b_{it} = x_{it} + y_{it} - c_{it}$, and sum over agents to get aggregate bond holdings, $\sum_i b_{it}$.
+
+If this sum is within some tolerance of zero, we are done for this
+period and move on. Otherwise, we adjust the guess of $q_t$ and repeat
+the procedure until market clearing is obtained. In practice, we used
+a bisection scheme to solve for the equilibrium value of $q_t$, using
+the fact that $\sum_i b_{it} > 0$ when $q_t$ is too low, and $\sum_i
+b_{it} < 0$ when $q_t$ is too high.
+
+\subsection{Implementation in OpenCL}
+
+To implement this in OpenCL, we assigned each work-item to calculate
+the optimal policy for a single agent. This was performed using
+bilinear interpolation as usual. However, since the number of bilinear
+interpolation calculations over a large simulation of thousands of
+agents over thousands of periods is likely to be large relative to the
+number of gridpoints on which the $c$ function is defined, we
+pre-calculated the interpolation coefficients over the entire grid on
+the device using an OpenCL kernel.
+
+The only other complication with implementation in OpenCL is the need
+to evaluate the term $\sum_i b_{it}$, since the $i$ indices are
+distributed across many work-groups. To address this, we used a
+reduction method from the book \emph{OpenCL in Action}, which takes a
+vector of entries in local memory and recursively adds the top half to
+the bottom half to efficiencly add $b_{it}$ over each
+work-group. Because there is no global synchronization, we then wrote
+the sum for each work-group to global memory, and then called a second
+kernel to perform the same reduction over the work-group sums, since
+reasonable numbers of simulations do not require more than two
+reductions.
+
+Once the overall sum is calculated, it is transferred over to the
+host, which then determines whether the sum is within the desired
+tolerance, and if not, launches the entire routine again with a new
+value of $q_t$. In this way, the algorithm only requires that a single
+scalar be transferred between the host and device (once in each
+direction) on each iteration.
+
+\subsection{Summary}
+
+Once the market clearing value $q_t$ is obtained, we then update time
+$t+1$ starting wealth using $x_{i,t+1} = b_{it}$, and continue on in
+the same fashion. The algorithm can therefore be summarized as follows.
+
+\begin{enumerate}
+\item Initialize agents starting wealth $x_{i0}$, previous employment states $\eps_{i,-1}$, and previous macro state $z_{-1}$, and set $t = 0$.
+\item \label{item:1} Draw $z_t$ given $z_{t-1}$.
+\item Draw $\eps_{it}$ given $z_t, z_{t-1}$ and $\eps_{i,t-1}$.
+\item Initialize a guess for $q_t$.
+\item \label{item:2} Calculate $c_{it}$ and $b_{it}$ for each agent using the optimal policy function.
+\item If $\sum_i b_{it}$ is within tolerance of 0, proceed to Step \ref{item:3}, otherwise update the guess of $q_t$ and return to Step \ref{item:2}.
+\item \label{item:3} Update $x_{i,t+1} = b_{it}$, increment $t = t+1$, and return to Step \ref{item:1}.
+\end{enumerate}
+
+The final step, once the simulated values have been
+calculated for each $t$, is to discard some portion of the initial
+observations as ``burn-in'' so that the resulting sample is not
+dependent on initial conditions.
+
+Overall, this algorithm is completely parallel when calculating
+agents' policies, and highly parallel in the reduction step,although
+some work items are idle at some times during the reduction. Further,
+there is little overhead in terms of transferring data between host
+and device until the computation is complete, and there are relatively
+many floating point operations relative to memory operations, so
+overall we expected substantial speedup from parallelizing this step
+as well.
+
+\section{``Meta'' Algorithm for Calculating $\tilde{q}$}
+
+Throughout Section \ref{sec:optim-policy-algor} and Section
+\ref{sec:simulation-algorithm}, we assumed a forecasting rule for
+$\tilde{q}$, and the resulting optimal policy solution and simulation
+depend on our guess for this rule. However, in principle there is good
+reason to want this rule to be at least unbiased, so that agents'
+estimates are not perpetually too low or too high.
+
+Since our forecasting rule was based on the aggregate state $z$, this
+is equivalent to demanding that $\tilde{q}(\bar{z}_j)$ be equal to the
+sample average of values $q_t$ in periods in which $z_t =
+\bar{z}_j$. To solve this fixed point problem, we begin with a guess
+for $\tilde{q}$, and run the algorithms described in Section
+\ref{sec:optim-policy-algor} and Section
+\ref{sec:simulation-algorithm}. We then evaluate the sample means for each possible $z_t$ state, and update $\tilde{q}(\bar{z}_j)$ for the next iteration to be equal to this sample mean. With this new value of $\tilde{q}$ in hand, we proceed to the next iteration, and continue until the error between $\tilde{q}$ and the sample means falls within tolerance.
+
+For this method, it is essential that the random draws of $\eps_{it}$ and $z_t$ be kept constant across iterations, otherwise the algorithm may not converge. For computational efficiency, it is important that each calculation of the optimal policy in Section \ref{sec:optim-policy-algor} begin with the solution from the previous iteration, which is likely to be very close to the new solution, and will substantially speed convergence time.
 
 \end{document}
