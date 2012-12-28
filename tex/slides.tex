@@ -110,7 +110,7 @@
   \item However, borrowing constraints, uninsurable income risk, and market incompleteness are important features for understanding economic behavior.
   \item Relaxing these simplifying assumptions is difficult, because economic activity now depends on the entire distribution of agents' states --- requires large scale simulations to solve.
   \item Solution of optimal policy and simulation can be computationally expensive problems in this type of model, but are well suited to parallelization.
-  \item Huge performance improvements on the GPU using OpenCL.
+  \item Our example yields substantial performance improvements on the GPU using OpenCL.
   \end{itemize}
 \end{frame}
 
@@ -133,10 +133,10 @@
 % \end{frame}
 
 \begin{frame}
-  \frametitle{Environment}
+  \frametitle{Model Environment}
   \begin{itemize}[<+->]
   \item The economy has a macro state $z$ that can correspond to either recession $(z = 0)$, or expansion $(z = 1)$.
-  \item Infinitely-lived agents (indexed by $i$) can either be unemployed $(e_{it} = 0)$, or employed $(e_{it} = 1)$.
+  \item Infinitely-lived agents (indexed by $i$) can either be unemployed $(e_i = 0)$, or employed $(e_i = 1)$.
   \item Define $s_i = (z, e_i)$, and assume that $s_i$ follows a Markov chain with transition matrix $P$.
   \item Agents' income depends on both macro state and employment state, denote by $y(s_i)$.
   \end{itemize}
@@ -168,13 +168,13 @@
 
 \begin{frame}
   \frametitle{Optimality Conditions}
-  \begin{itemize}
+  \begin{itemize}[<+->]
   \item Need to determine optimal policy of the agent ($c_i$ and $b_i$) as functions $(x_i, q, s_i)$, where $x_i$ is starting wealth (from previous bonds).
   \item Optimal policy uniquely determined by
     \begin{equation*}
       q u'(c_i) \ge \beta \E \left[ u'(c_i') | s_i \right]
     \end{equation*}
-    \begin{itemize}
+    \begin{itemize}[<+->]
     \item Must hold with equality for $b_i > -\bar{b}$ (complementary slackness).
     \item $\beta$ is the discount factor (patience).
     \item $\E$ is the expectation operator.
@@ -215,7 +215,7 @@
 
 \begin{frame}
   \frametitle{Endogenous Grid Steps}
-  \begin{itemize}
+  \begin{itemize}[<+->]
   \item Use workgroups of size $(K_x, 1, N_s)$, where $K_x$ is some local $x$ size.
   \item Step 1: calculate $c^n(b_i + y(s_i'), \tilde{q}, s_i')$ using bilinear interpolation (easy because grid is known) and store in local memory.
   \item Step 2: calculate
@@ -250,11 +250,11 @@
 
 % \begin{frame}
 %   \frametitle{Recovering Original Grid}
-%   \begin{itemize}
+%   \begin{itemize}[<+->]
 %   \item Each work item takes one $x_i$ from this block, and checks if it falls in that group's $x_i^*$ grid.
 %   \item If so, search for exact bin (using bisection) and interpolate.
 %   \item Need to overlap the work groups so that every point will fall into one of these intervals.
-%     \begin{itemize}
+%     \begin{itemize}[<+->]
 %     \item Work group 1: $(\bar{x}_0,\ldots, \bar{x}_{K_x - 1})$
 %     \item Work group 2: $(\bar{x}_{K_x - 1}, \ldots, \bar{x}_{2 K_x - 2})$
 %     \item etc...
@@ -266,7 +266,7 @@
 
 \begin{frame}
   \frametitle{Simulation}
-  \begin{itemize}
+  \begin{itemize}[<+->]
   \item Solution results from the previous section tell the agents what to do given $(x_i, q, s_i)$.
   \item Apply solution to large-scale simulation (many agents, many periods) to obtain aggregate results.
   \item Main obstacle: need to solve for the unique $q$ that clears the bond market in \emph{every} period.
@@ -275,11 +275,11 @@
 
 \begin{frame}
   \frametitle{Simulation Algorithm}
-  \begin{itemize}
+  \begin{itemize}[<+->]
   \item Each period, 1-d parallelization using work groups of $K_{SIM}$ agents.
   \item Given a guess for $q$, random draws of $s_i$, and the $x_i$ implied by past behavior, solve for $c_i$ and $b_i$.
   \item Add $b_i$ across agents using a reduction algorithm.
-    \begin{itemize}
+    \begin{itemize}[<+->]
     \item Step 1: to add all assets in a work group.
     \item Step 2: kernel to add assets across work groups.
     \end{itemize}
@@ -292,7 +292,7 @@
 
 \begin{frame}
   \frametitle{``Meta'' Routine}
-  \begin{itemize}
+  \begin{itemize}[<+->]
   \item All the previous steps assumed a guess for $\tilde{q}(z)$, the average bond price in each macro ($z$) state.
   \item Want these expectations to be unbiased.
   \item Starting with some guess for $\tilde{q}$, run the entire algorithm, and calculate sample means of bond prices in each $z$ state.
@@ -301,12 +301,60 @@
   \end{itemize}
 \end{frame}
 
-\section{Performance}
+\section{Results}
+
+\begin{frame}
+	\frametitle{Sample Paths}
+%	\begin{itemize}[<+->]
+%	\item Sample paths from simulation:
+%	\end{itemize}
+	\includegraphics[width=\textwidth]{samplepaths}
+\end{frame}
 
 \begin{frame}
   \frametitle{Performance}
-  \begin{itemize}
-  \item To be written...
+  \begin{itemize}[<+->]
+  \item Substantial speedup on the GPU relative to CPU, more so for solution algorithm than for simulation algorithm.
+  \item Roughly 1-6x speedup for the simulation algorithm depending on scale.
+  \item Roughly 8-1000x speedup for the solution algorithm depending on scale.
+  \item Diminishing returns to increasing $N_x$ on GPU.
+  \item Roughly linear in $N_t$, $N_q$ on GPU.
+  \item Timing not sensitive to increases in $N_{SIM}$ on GPU.
+  \end{itemize}
+\end{frame}
+  
+\begin{frame}
+  \frametitle{Timings on NVIDIA Tesla M2070 GPU}
+	\includegraphics[width=\textwidth]{timings.pdf}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Timings Per Gridpoint on NVIDIA M2070 Tesla GPU}
+	\includegraphics[width=\textwidth]{timings_pergrid.pdf}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Timings on Intel Xeon CPU}
+	\includegraphics[width=\textwidth]{timings_cpu.pdf}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Timings Per Gridpoint on Intel Xeon CPU}
+	\includegraphics[width=\textwidth]{timings_pergrid_cpu.pdf}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Speedup: Ratio of CPU Timing to GPU Timing}
+	\includegraphics[width=\textwidth]{speedup.pdf}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Tricks We Learned}
+  \begin{itemize}[<+->]
+  \item Replace constants with preprocessor macros.
+  \item Similarly, re-use variables using macros, by assigning multiple names to the same object.
+  \item Allocate local memory using clSetKernelArg
+  \item \texttt{constant} global memory is good --- but there is a limit on how much of this memory you can use on the GPU!
   \end{itemize}
 \end{frame}
 

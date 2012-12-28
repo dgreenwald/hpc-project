@@ -9,6 +9,7 @@
 \usepackage{mathtools}
 \usepackage{booktabs}
 \usepackage{caption}
+\usepackage{graphicx}
 
 \newcommand{\sumn}{\sum_{i=1}^{n}}
 \newcommand{\sumt}{\sum_{t=0}^\infty}
@@ -69,11 +70,156 @@
 
 \changepage{1.5 in}{1 in}{0 in}{-0.5 in}{0 in}{0 in}{0 in}{0 in}{0 in}
 
-% Description of the problem
+\title{\textbf{Agent-Based Economic Models in OpenCL}}
 
-\section{Description of the Problem}
+\author{ Dan Greenwald and Kevin Mullin \thanks{Dan Greenwald can be
+    reached at daniel.greenwald@nyu.edu. We thank Andreas Kloeckner
+    and Marsha Berger for doing a great job teaching such useful
+    material, and especially Prof. Kloeckner for taking the time to
+    debug the code when we were completely stuck.  }}
 
-\subsection{Introduction to Macroeconomics}
+\date{\today}
+
+\maketitle
+
+\section{Introduction}
+\label{sec:introduction}
+
+Our project is to simulate the macroeconomic behavior of an economy
+with incomplete asset markets using OpenCL on a GPU. A complete
+description of the environment and the algorithm that we use can be
+found in Sections \ref{sec:optim-policy-algor} through
+\ref{sec:meta-algor-calc}. In general, the model is based on that of
+Krusell and Smith (1998) adapted so that a risk-free bond is traded,
+and there is no capital in the economy.
+
+Overall we were able to obtain dramatic gains from parallelization
+in general, but also from moving from CPU to GPU computation. These
+gains were more dramatic for the solution algorithm than for the
+simulation algorithm, and were quite small for some scales, but
+showed speedup of nearly 1000 times for scales with large solution
+grids.
+
+The write-up is organized as follows. The rest of Section
+\ref{sec:introduction} contains a summary of the project, notes on
+the relevant scale of the problem, instructions for running, and the
+division of labor. Section \ref{sec:economic-background} contains
+the economic background for our problem. Section \ref{sec:model}
+describes the mathematical model we will be using. Sections
+\ref{sec:optim-policy-algor} through \ref{sec:meta-algor-calc}
+describe the computational algorithm. Section \ref{sec:timings}
+contains the timing results. We conclude in Section
+\ref{sec:conclusion}.
+
+\subsection{Summary of Project}
+
+The problem contains two major components. The first is to solve for the
+agent's optimal consumption policy given his or her current
+state. This involves interating a functional operation on function
+approximations defined on a grid. Since the calculations for each
+gridpoint are independent, the algorithm is highly
+parallelizable. Each iteration involves solving an equation derived
+from the model's optimality conditions. This can be done without
+resorting to use of a nonlinear equation solver by use of the
+``endogenous grid method.'' The main computational challenge is to
+move back from the endogenous grid to the original grid, because it
+involves interpolation on an unknown grid, of which only a portion is
+held by each work-group.
+
+The second component is to use the optimal policies to simulate the
+economy for a large number of agents over a large number of periods,
+in order to obtain a simulation of macroeconomic behavior. This type
+of simulation could be used to perform experiments, like studying the
+effects of a policy change. Alternatively, this type of simulation
+could be used for parameter estimation, which would seek to minimize
+the distance between simulated moments of macroeconomic variables and
+their counterparts in the actual data. The main computational
+challenge in this step is to set bond prices exactly so that markets
+clear (i.e. so that total saving equals total borrowing), which
+involves simulating the economy in each period for various guesses of
+the bond price until market clearing is attained.
+
+Throughout the above steps, the agents use a forecasting rule to
+generate their expectations of the bond price in the future, based on
+the future macroeconomic state. In order that this expectation be
+unbiased, the above algorithm is iterated using guesses of the policy
+rule until the forecasting rule is within tolerance of the relevant
+sample means.
+
+% Scale of the problem we are aiming at
+\subsection{Scale of the Problem}
+
+The scale of the project that we are aiming at for the solution
+portion of the model is to use grids of between a few hundred and a
+few thousand gridpoints each for the continuous variables $(x_i,
+q)$. This means approximating the optimal policy function on $4 N_x
+N_q$ gridpoints.
+
+At the high end, the scale of the solution step is limited by the
+available amount of memory for GPU computation, since two approximate
+functions must be stored on the device at all times, taking up $32 N_x
+N_q$ bytes of space at double precision. At the low end, the ability
+to parallelize across gridpoints makes this procedure economical for
+nearly any scale.
+
+The scale of the project that we are aiming at for the simulation
+portion of the model is to use a few thousand agents over thousands of
+periods, for example, 5,000 agents over 12,000 periods (of which 2,000
+is burn-in).
+
+At the high end, the limitation is again the available amount of
+memory for GPU computation, as the program is currently written, since
+the simulation output arrays must hold $24 N_{sim} N_t$ bytes on the
+device. At the low end, since parallelization can only occur across
+agents in the simulation, and not across time, this algorithm may not
+yield speedup for very small values of $N_{sim}$.
+
+\subsection{Distribution of Labor}
+
+The division of labor for the project was as follows: Dan
+Greenwald derived the simulation algorithm, and prepared the slides
+and writeup. Kevin Mullin derived the solution algorithm.
+
+\subsection{Instructions}
+
+A makefile is included in the code directory that should build all the
+relevant code. It is necessary to have OpenCL installed in order to
+run the code. The main file is \texttt{solve.c}, which in turn calls
+OpenCL kernels contained in the file \texttt{solve.cl}. The program
+\texttt{solve.c} can be run without any arguments, in which case
+default arguments are used. Alternatively, you can use the syntax
+
+\texttt{ ./solve [Nx] [Nq] [Nsim] [Nt] [use\_gpu] }
+
+Where the first four variables are the desired values of $Nx, Nq,
+N_{sim}$, and $N_t$, respectively, and the last value is whether you
+want to run the algorithm on an NVIDIA GPU (if equal to 1) or on an
+AMD CPU platform (if equal to 0). A commented-out line of code in
+\texttt{solve.c} allows you to replace this with an Intel CPU platform if
+desired.
+
+Inside of \texttt{solve.c}, the macro \texttt{OUTPUT}, determines
+whether the program saves the simulation results arrays to the
+directory in binary files. Set \texttt{OUTPUT} to 1 to save in this
+fashion, or to 0 to omit saving (e.g. for evaluating timings).
+
+Two shell scripts were used to obtain the timing results,
+\texttt{timings.sh} and \texttt{timings\_cpu.sh}, for the GPU and CPU
+results, respectively.
+
+Finally, the Matlab script \texttt{results.m} was used to create the
+graphs and output parts of the tables used in the writeup.
+
+\section{Economic Background}
+\label{sec:economic-background}
+
+This section describes the economic problem being solved in relatively
+theoretical terms. The reader interested only in the mathematical nuts
+and bolts of the model should skip to Section \ref{sec:model}. The
+reader interested only in the computational algorithm should skip
+further, to Section \ref{sec:optim-policy-algor}.
+
+\subsection{Macroeconomic Modeling}
 
 Macroeconomics is the subfield of economics that deals with outcomes
 for an entire economy, as opposed to a single market. A standard
@@ -124,10 +270,14 @@ especially on unsecured debt, which they cannot exceed.
 
 Incorporating these features into a microfounded macroeconomic model
 leads to what is typically known as a ``heterogeneous-agent'' model,
-in which micro-level differences between agents are important, and the
-entire distribution of individual states must be accounted for. This
-leads to three kinds of problems, all of which are typically
-computationally intensive to overcome. 
+in which micro-level differences between agents are important, and
+the entire distribution of individual states must be accounted
+for. This leads to three kinds of problems, all of which are
+typically computationally intensive to overcome. A good example of
+this type of model, on which the model for this project is based, is
+that of Krusell and Smith (1998), although there are many other
+examples (see, e.g., Guvenen (2011) or Heathcote, Storesletten and
+Violante (2009) for surveys).
 
 \subsubsection{Solution}
 
@@ -183,8 +333,12 @@ more important, allow for more complex models or more accurate
 solutions to become tractable.
 
 \section{The Model}
+\label{sec:model}
 
-This next section will summarize the economic model that is being solved, which will be the foundation for the computational routine. The reader interested in the computational routine only should skip ahead to Section \ref{sec:optim-policy-algor}.
+This next section will summarize the economic model that is being
+solved, which will be the foundation for the computational
+routine. The reader interested in the computational routine only
+should skip ahead to Section \ref{sec:optim-policy-algor}.
 
 \subsection{Environment}
 
@@ -202,19 +356,34 @@ state. Define $s_i = (z, e_i)$ to be the overall state for agent $i$,
 which can take on four possible values, and let $y(s_i)$ be the
 function (identical across individuals) that translates the states
 into an individual's labor income. We will assume that $s_i$ follows a
-Markov chain for each agent with transition matrix $P$. 
+Markov chain for each agent with transition matrix $P$.
 
-In practice, we parameterized the $z$ values, the $P$ matrix, and the $y$ function following Krusell and Smith (1998), which in turn chooses these values to match various empirical features of the macroeconomy. Unlike Krusell and Smith, however, I chose the $y$ function so that agents receive 1/3 of their employed income in the unemployed state, which roughly corresponds to U.S. unemployment insurance. 
+In practice, we parameterized the $z$ values, the $P$ matrix, and
+the $y$ function following Krusell and Smith (1998), which in turn
+chooses these values to match various empirical features of the
+macroeconomy. Unlike Krusell and Smith, however, I chose the $y$
+function so that agents receive 1/3 of their employed income in the
+unemployed state, which roughly corresponds to U.S. unemployment
+insurance.
 
 \subsection{Preferences}
 
 In each period, agents consume resources. Agents choose
 state-contingent paths of lifetime consumption in each period $t$ to
 maximize
-\begin{equation*} 
-  V_{it} = \E_t \sum_{j=0}^\infty \beta^j u(c_{i,t+j}) 
-\end{equation*} 
-where $V$ is the present discounted value of lifetime consumption, $\E_t$ is the mathematical expectations operator conditional on time $t$ information, $\beta$ is the discount factor (which determines the agent's level of patience), $u$ is a utility funciton representing the benefit an agent gets from some level of consumption in a given period, and $c$ is consumption. Further, $V$ and $c$ should be interpreted as functions that may depend on the state at time $t$ and $t+j$, respectively. We will restrict attention to problems where $u$ is continuously differentiable and strictly concave.
+\begin{equation*}
+  V_{it} = \E_t \sum_{j=0}^\infty \beta^j u(c_{i,t+j})
+\end{equation*}
+where $V$ is the present discounted value of lifetime consumption,
+$\E_t$ is the mathematical expectations operator conditional on time
+$t$ information, $\beta$ is the discount factor (which determines
+the agent's level of patience), $u$ is a utility funciton
+representing the benefit an agent gets from some level of
+consumption in a given period, and $c$ is consumption. Further, $V$
+and $c$ should be interpreted as functions that may depend on the
+state at time $t$ and $t+j$, respectively. We will restrict
+attention to problems where $u$ is continuously differentiable and
+strictly concave.
 
 \subsection{Assets}
 
@@ -227,8 +396,8 @@ interest rate of $r = 1/q$. Since there is no outside source of funds,
 in each period $q$ must be set so that total saving equals total
 borrowing, which is known as ``market clearing.'' Mathematically, this
 can be expressed by the condition
-\begin{equation*} 
-\int b_i \,di = 0 
+\begin{equation*}
+  \int b_i \,di = 0
 \end{equation*}
 which must hold in each period.
 
@@ -249,13 +418,16 @@ where primes (i.e. $x_i'$) represent values of variables in the
 following period.\footnote{Hopefully this is not confusing when primes
   are also used for derivatives.}
 
-Given our earlier assumptions on the utility function, the agent's optimal policy $c(x, q, s_i)$ is uniquely defined by the first order condition 
+Given our earlier assumptions on the utility function, the agent's
+optimal policy $c(x, q, s_i)$ is uniquely defined by the first order
+condition
 \begin{equation}
-\label{eq:foc}
+  \label{eq:foc}
   q u'(c(x_i, q, s_i)) \ge \beta \E \left[ u'(c(x_i', q', s_i')) \Bigr| s_i \right]
 \end{equation}
 which must hold with equality for $b_i > -B$, where $b_i = x_i +
-y(s_i) - c_i$. The goal of the solution algorithm will be to solve for this optimal policy function $c$ up to a close approximation.
+y(s_i) - c_i$. The goal of the solution algorithm will be to solve
+for this optimal policy function $c$ up to a close approximation.
 
 \section{Optimal Policy Algorithm}
 \label{sec:optim-policy-algor}
@@ -267,10 +439,10 @@ s_i)$ that solves the optimality condition \eqref{eq:foc}. In general,
 the solution will proceed by starting with some guess of the policy
 function $c^0$, and then on each step, choosing $c^{n+1}$ to satisfy
 \begin{equation}
-\label{eq:foc-iter}
+  \label{eq:foc-iter}
   q u'(c^{n+1}(x_i, q, s_i)) \ge \beta \E \left[ u'(c^n(x_i', q', s_i')) \Bigr| s_i \right]
 \end{equation}
-for all $(x_i, q, s_i)$, which again must hold with equality for $b_i > 0$. 
+for all $(x_i, q, s_i)$, which again must hold with equality for $b_i > 0$.
 
 Since $x_i$ and $q$ are continuous variables, the function $c$ is an
 infinite-dimensional object, we must approximate it to be able to
@@ -408,7 +580,9 @@ $c^n$ and $c^{n+1}$ falls below some tolerance.
 
 \subsection{Implementation in OpenCL}
 
-Most of the specifics of how each work-group and each work-item is assigned has already been described in the preceding sections, so this section will focus on performance and parallelization issues.
+Most of the specifics of how each work-group and each work-item is
+assigned has already been described in the preceding sections, so
+this section will focus on performance and parallelization issues.
 
 It should be clear that all steps of this algorithm can be run in
 parallel, with only a few local synchronizations required. However,
@@ -437,6 +611,24 @@ simulating the paths of a large number of agents. The main
 computational challenge in this section is determining the bond price
 in each period of the simulation that makes markets clear.
 
+A sample of some agents' simulated paths can be seen in Figure
+\ref{fig:sim-paths}. Note that while the bond price makes large
+moves associated with the macroeconomic state (as in the agents'
+forecasting rules), it displays jitters associated with the specific
+market-clearing conditions, which correspond to forecasting error on
+the part of the agents. In general, it can be seen from the
+simulations that agents tend to build up a small buffer of assets
+(relative to their borrowing limit) while employed, which they then
+spend down when unemployed, so as not to have a drastic fall in
+consumption.
+
+\begin{figure}[ht]
+  \centering
+  \caption{Simulated Paths}
+  \label{fig:sim-paths}
+  \includegraphics[width=\textwidth]{samplepaths.pdf}
+\end{figure}
+
 To initialize the simulation, we initialize agents with zero wealth,
 and assign some random previous states to each agent and to the
 overall economy. The initial condition can be relatively arbitrary, as
@@ -453,7 +645,10 @@ $\eps_{i,t-1}$, $z_{t-1}$, and $z_t$.
 
 Given a guess for $q_t$, the bond price at time $t$, we evaluate
 agents' optimal consumption using the $c$ function obtained from the
-methods of Section \ref{sec:optim-policy-algor}. Given the resulting values of $c_{it}$, we can calculate the implied bond holdings using $b_{it} = x_{it} + y_{it} - c_{it}$, and sum over agents to get aggregate bond holdings, $\sum_i b_{it}$.
+methods of Section \ref{sec:optim-policy-algor}. Given the resulting
+values of $c_{it}$, we can calculate the implied bond holdings using
+$b_{it} = x_{it} + y_{it} - c_{it}$, and sum over agents to get
+aggregate bond holdings, $\sum_i b_{it}$.
 
 If this sum is within some tolerance of zero, we are done for this
 period and move on. Otherwise, we adjust the guess of $q_t$ and repeat
@@ -476,7 +671,7 @@ the device using an OpenCL kernel.
 The only other complication with implementation in OpenCL is the need
 to evaluate the term $\sum_i b_{it}$, since the $i$ indices are
 distributed across many work-groups. To address this, we used a
-reduction method from the book \emph{OpenCL in Action}, which takes a
+reduction method from the book \emph{OpenCL in Action} (2011), which takes a
 vector of entries in local memory and recursively adds the top half to
 the bottom half to efficiencly add $b_{it}$ over each
 work-group. Because there is no global synchronization, we then wrote
@@ -523,6 +718,7 @@ overall we expected substantial speedup from parallelizing this step
 as well.
 
 \section{``Meta'' Algorithm for Calculating $\tilde{q}$}
+\label{sec:meta-algor-calc}
 
 Throughout Section \ref{sec:optim-policy-algor} and Section
 \ref{sec:simulation-algorithm}, we assumed a forecasting rule for
@@ -537,8 +733,286 @@ sample average of values $q_t$ in periods in which $z_t =
 \bar{z}_j$. To solve this fixed point problem, we begin with a guess
 for $\tilde{q}$, and run the algorithms described in Section
 \ref{sec:optim-policy-algor} and Section
-\ref{sec:simulation-algorithm}. We then evaluate the sample means for each possible $z_t$ state, and update $\tilde{q}(\bar{z}_j)$ for the next iteration to be equal to this sample mean. With this new value of $\tilde{q}$ in hand, we proceed to the next iteration, and continue until the error between $\tilde{q}$ and the sample means falls within tolerance.
+\ref{sec:simulation-algorithm}. We then evaluate the sample means for
+each possible $z_t$ state, and update $\tilde{q}(\bar{z}_j)$ for the
+next iteration to be equal to this sample mean. With this new value of
+$\tilde{q}$ in hand, we proceed to the next iteration, and continue
+until the error between $\tilde{q}$ and the sample means falls within
+tolerance.
 
-For this method, it is essential that the random draws of $\eps_{it}$ and $z_t$ be kept constant across iterations, otherwise the algorithm may not converge. For computational efficiency, it is important that each calculation of the optimal policy in Section \ref{sec:optim-policy-algor} begin with the solution from the previous iteration, which is likely to be very close to the new solution, and will substantially speed convergence time.
+For this method, it is essential that the random draws of $\eps_{it}$
+and $z_t$ be kept constant across iterations, otherwise the algorithm
+may not converge. For computational efficiency, it is important that
+each calculation of the optimal policy in Section
+\ref{sec:optim-policy-algor} begin with the solution from the previous
+iteration, which is likely to be very close to the new solution, and
+will substantially speed convergence time.
+
+\section{Timings}
+\label{sec:timings}
+
+\subsection{GPU Timings}
+
+The GPU timings are summarized in Tables \ref{tab:timings} and
+\ref{tab:timings_pergrid}, and in Figures \ref{fig:timings} and
+\ref{fig:timings_pergrid}.
+
+\begin{table}[ht]
+  \centering
+  \caption{GPU Timings}
+  \label{tab:timings}
+  \begin{tabular}{l c c c c}
+    \toprule
+    & $N_x$ & $N_q$ & $N_{sim}$ & $N_t$ \\
+    \midrule
+    125 & 0.002 & 0.004 &  -- & 1.218 \\
+    250 & 0.005 & 0.008 & 8.070 & 2.429 \\
+    500 & 0.011 & 0.015 & 8.504 & 4.895 \\
+    1000 & 0.030 & 0.030 & 8.770 & 9.702 \\
+    2000 & 0.095 & 0.060 & 9.136 & 19.489 \\
+    4000 & 0.335 & 0.118 & 9.613 & 38.860 \\
+    6000 & 0.724 & 0.177 & 9.798 & 58.453 \\
+    8000 & 1.251 & 0.236 & 10.130 & 77.714 \\
+    12000 &  -- &  -- & 10.526 & 117.384 \\
+    16000 &  -- &  -- & 10.881 & 155.566 \\
+    \bottomrule
+  \end{tabular}
+  \caption*{\footnotesize All timings are measured in seconds. The timings were obtained on a NVIDIA Tesla M2070 GPU on NYU's Bowery cluster. Timings are taken from the first overall iteration only in the ``meta'' algorithm. Timings for $N_x$ and $N_q$ values are per iteration of the solution algorithm. Timings for simulations are absolute timings for the entire simulation routine. The actual size used for the $N_{sim}$ timings is the value in the first column rounded up to the nearest multiple of 256, the work-group size. The actual size used for the $N_t$ timings is the value in the first column multiplied by 1.2, to allow for a 20\% burn-in. While one size is being varied, the others are held constant at $N_x = 1000$, $N_q = 1000$, $N_{sim} = 5120$, and $N_t = 1200$. Because of rounding up, the 125 timing for the $N_{sim}$ scaling is redundant and not included. The 12000 and 16000 timings for $N_x$ and $N_q$ would not run because of memory issues and are not included.}
+\end{table}
+
+\begin{table}[ht]
+  \centering
+  \caption{GPU Timings per Gridpoint}
+  \label{tab:timings_pergrid}
+  \begin{tabular}{l c c c c}
+    \toprule
+    & $N_x$ & $N_q$ & $N_{sim}$ & $N_t$ \\
+    \midrule
+    125 & 1.837(-8) & 3.269(-8) &  -- & 1.586(-6) \\
+    250 & 1.907(-8) & 3.128(-8) & 2.627e-05 & 1.581(-6) \\
+    500 & 2.167(-8) & 3.011(-8) & 1.384e-05 & 1.594(-6) \\
+    1000 & 2.994(-8) & 2.985(-8) & 7.137(-6) & 1.579(-6) \\
+    2000 & 4.755(-8) & 2.978(-8) & 3.717(-6) & 1.586(-6) \\
+    4000 & 8.365(-8) & 2.954(-8) & 1.956(-6) & 1.581(-6) \\
+    6000 & 1.206(-7) & 2.945(-8) & 1.329(-6) & 1.586(-6) \\
+    8000 & 1.564(-7) & 2.953(-8) & 1.031(-6) & 1.581(-6) \\
+    12000 &  -- &  -- & 7.290(-7) & 1.592(-6) \\
+    16000 &  -- &  -- & 5.622(-7) & 1.583(-6) \\
+    \bottomrule
+  \end{tabular}
+  \caption*{\footnotesize All timings are measured in seconds. Numbers in parentheses represent powers of ten for scientific notation. The timings were obtained on a NVIDIA Tesla M2070 GPU on NYU's Bowery cluster. Timings are taken from the first overall iteration only in the ``meta'' algorithm. The number of gridpoints is given by 4 $N_x N_q$ for the $N_x$ and $N_q$ simulations, and $N_{sim} N_t$ foor the $N_{sim}$ and $N_t$ simulations. Timings for $N_x$ and $N_q$ values are per iteration of the solution algorithm. Timings for simulations are absolute timings for the entire simulation routine. The actual size used for the $N_{sim}$ timings is the value in the first column rounded up to the nearest multiple of 256, the work-group size. The actual size used for the $N_t$ timings is the value in the first column multiplied by 1.2, to allow for a 20\% burn-in. While one size is being varied, the others are held constant at $N_x = 1000$, $N_q = 1000$, $N_{sim} = 5120$, and $N_t = 1200$. Because of rounding up, the 125 timing for the $N_{sim}$ scaling is redundant and not included. The 12000 and 16000 timings for $N_x$ and $N_q$ would not run because of memory issues and are not included.}
+\end{table}
+
+\begin{figure}[ht]
+  \centering
+  \caption{GPU Timings}
+  \label{fig:timings}
+  \includegraphics[width=\textwidth]{timings.pdf}
+\end{figure}
+
+\begin{figure}[ht]
+  \centering
+  \caption{GPU Timings Per Gridpoint}
+  \label{fig:timings_pergrid}
+  \includegraphics[width=\textwidth]{timings_pergrid.pdf}
+\end{figure}
+
+There are four ways in which the scale of the problem can be changed,
+by adjusting the number of $x$ gridpoints ($N_x$) or the number of $q$
+gridpoints ($N_q$) in the solution algorithm, or by adjusting the
+number of simulated agents ($N_{sim}$) or the number of periods
+($N_t$) in the simulation algorithm. Since these produced different
+results, we varied each of these values while holding the others
+constant, to isolate the effects of changing each scale.
+
+Increasing the $N_x$ scale led to steadily increasing per-gridpoint
+timings, indicating a loss of efficiency with the increase of the
+scale. This is not surprising, and follows from the scheme described
+in Section \ref{sec:optim-policy-algor} in which the entire $\bar{x}$
+grid must be loaded into each work-group and checked, block by
+block. By increasing the size of the $\bar{x}$ grid, but leaving the
+size of each work-group constant, this means more blocks loaded and
+checked per work-group, in addition to increasing the number of
+work-groups, explaining the more than linear increases in the timings.
+
+Increasing the $N_q$ and $N_t$ scales led to linear increases in the
+timings, and relatively constant per-gridpoint timings, with the
+exception of slower per-gridpoint timings for very low values of
+$N_q$. This is largely in line with our expectations --- increasing
+$N_q$ changes the number of work-groups, but does not change the task
+of any given work-group. Similarly, each period is run in serial, and
+does not affect the parallelization of the simulation algorithm, and
+so we should again expect linear scaling.
+
+Increasing the $N_{sim}$ scale led to less than linear increases in
+the timings, and decreasing per-gridpoint timings. We are unsure
+exactly of why this is the case, but believe it to be because the
+number simulated agents is relatively small regardless of the numbers
+used, and the actual floating point computations can be handled nearly
+instantaneously by any powerful processor. Therefore, we suspect that
+the $N_{sim}$ scale is not really the limiting factor in the timings.
+
+\subsection{CPU Timings}
+
+For comparison, we repeated the timings on the CPU, although we
+omitted some of the larger sizes for brevity, since overall the CPU
+timings were much slower than the CPU timings. The CPU timings are
+summarized in Tables \ref{tab:cpu_timings} and
+\ref{tab:cpu_timings_pergrid}, and in Figures \ref{fig:cpu_timings}
+and \ref{fig:cpu_timings_pergrid}.
+
+\begin{table}[ht]
+  \centering
+  \caption{CPU Timings}
+  \label{tab:cpu_timings}
+  \begin{tabular}{l c c c c}
+    \toprule
+    & $N_x$ & $N_q$ & $N_{sim}$ & $N_t$ \\
+    \midrule
+    125 & 0.029 & 0.032 &  -- & 3.342 \\
+    250 & 0.059 & 0.064 & 9.584 & 6.761 \\
+    500 & 0.123 & 0.128 & 11.963 & 13.854 \\
+    1000 & 0.256 & 0.256 & 13.026 & 28.707 \\
+    2000 & 0.544 & 0.514 & 13.691 & 54.403 \\
+    4000 & 112.886 & 116.237 & 25.045 & 108.647 \\
+    6000 & 174.475 & 152.638 & 31.847 & 161.420 \\
+    8000 & 247.291 & 231.218 & 40.149 &  -- \\
+    12000 &  -- &  -- & 54.820 &  -- \\
+    16000 &  -- &  -- & 75.595 &  -- \\
+    \bottomrule
+  \end{tabular}
+  \caption*{\footnotesize All timings are measured in seconds. The timings were obtained on a 2.67 GHz Intel Xeon Processor using the AMD Platform on NYU's Bowery cluster. Timings are taken from the first overall iteration only in the ``meta'' algorithm. Timings for $N_x$ and $N_q$ values are per iteration of the solution algorithm. Timings for simulations are absolute timings for the entire simulation routine. The actual size used for the $N_{sim}$ timings is the value in the first column rounded up to the nearest multiple of 256, the work-group size. The actual size used for the $N_t$ timings is the value in the first column multiplied by 1.2, to allow for a 20\% burn-in. While one size is being varied, the others are held constant at $N_x = 1000$, $N_q = 1000$, $N_{sim} = 5120$, and $N_t = 1200$. Because of rounding up, the 125 timing for the $N_{sim}$ scaling is redundant and not included. Other missing entries are omissions simply due to the long length of these timings.}
+\end{table}
+
+\begin{table}[ht]
+  \centering
+  \caption{CPU Timings per Gridpoint}
+  \label{tab:cpu_timings_pergrid}
+  \begin{tabular}{l c c c c}
+    \toprule
+    & $N_x$ & $N_q$ & $N_{sim}$ & $N_t$ \\
+    \midrule
+    125 & 2.349(-7) & 2.545(-7) &  -- & 4.352(-6) \\
+    250 & 2.372(-7) & 2.555(-7) & 3.120(-5) & 4.402(-6) \\
+    500 & 2.468(-7) & 2.567(-7) & 1.947(-5) & 4.510(-6) \\
+    1000 & 2.557(-7) & 2.562(-7) & 1.060(-5) & 4.672(-6) \\
+    2000 & 2.722(-7) & 2.572(-7) & 5.571(-6) & 4.427(-6) \\
+    4000 & 2.822(-5) & 2.906(-5) & 5.095(-6) & 4.421(-6) \\
+    6000 & 2.908(-5) & 2.544(-5) & 4.320(-6) & 4.379(-6) \\
+    8000 & 3.091(-5) & 2.890(-5) & 4.084(-6) &  -- \\
+    12000 &  -- &  -- & 3.797(-6) &  -- \\
+    16000 &  -- &  -- & 3.906(-6) &  -- \\
+    \bottomrule
+  \end{tabular}
+  \caption*{\footnotesize All timings are measured in seconds. Numbers in parentheses represent powers of ten for scientific notation. The timings were obtained on a 2.67 GHz Intel Xeon Processor using the AMD Platform on NYU's Bowery cluster. Timings are taken from the first overall iteration only in the ``meta'' algorithm. The number of gridpoints is given by 4 $N_x N_q$ for the $N_x$ and $N_q$ simulations, and $N_{sim} N_t$ foor the $N_{sim}$ and $N_t$ simulations. Timings for $N_x$ and $N_q$ values are per iteration of the solution algorithm. Timings for simulations are absolute timings for the entire simulation routine. The actual size used for the $N_{sim}$ timings is the value in the first column rounded up to the nearest multiple of 256, the work-group size. The actual size used for the $N_t$ timings is the value in the first column multiplied by 1.2, to allow for a 20\% burn-in. While one size is being varied, the others are held constant at $N_x = 1000$, $N_q = 1000$, $N_{sim} = 5120$, and $N_t = 1200$. Because of rounding up, the 125 timing for the $N_{sim}$ scaling is redundant and not included. The 12000 and 16000 timings for $N_x$ and $N_q$ would not run because of memory issues and are not included.}
+\end{table}
+
+\begin{figure}[ht]
+  \centering
+  \caption{CPU Timings}
+  \label{fig:cpu_timings}
+  \includegraphics[width=\textwidth]{timings.pdf}
+\end{figure}
+
+\begin{figure}[ht]
+  \centering
+  \caption{CPU Timings Per Gridpoint}
+  \label{fig:cpu_timings_pergrid}
+  \includegraphics[width=\textwidth]{timings_pergrid.pdf}
+\end{figure}
+
+For the $N_x$ scaling, the CPU timings exhibited some strange properties, barely increasing linearly for small sizes of $N_x$, and then jumping by a factor of roughly 100 per gridpoint from $N_x = 2000$ to $N_x = 4000$, and then increasing roughly linearly again. I am unsure of the reason for this result (I suspect it is a memory issue), but it makes the GPU computation especially attractive for large values of $N_x$.
+
+The $N_q$ results on the CPU are similar to the $N_x$ results, again with a strange jump from $N_q = 2000$ to $N_q = 4000$, and linear increases otherwise.
+
+The $N_{sim}$ timings no longer exhibit the same less than linear increases as in the GPU case, and in fact now show more than linear increases when $N_{sim}$ is large. This may be because simultaneous computation of the agents' simulations is no longer so effortless for the CPU.
+
+The $N_t$ timings are very similar in their profile to the GPU case, once again increasing roughly linearly.
+
+\subsection{Speedup}
+
+The speedup from CPU to GPU appears to be quite large for some
+scalings, and speedup results are summarized in Table
+\ref{tab:speedup} and Figure \ref{fig:speedup}.
+
+\begin{table}[ht]
+  \centering
+  \caption{Speedup: Ratio of CPU to GPU Timings}
+  \label{tab:speedup}
+  \begin{tabular}{l c c c c}
+    \toprule
+    & $N_x$ & $N_q$ & $N_{sim}$ & $N_t$ \\
+    \midrule
+    125 & 0.029 & 0.032 &  -- & 3.342 \\
+    250 & 0.059 & 0.064 & 9.584 & 6.761 \\
+    500 & 0.123 & 0.128 & 11.963 & 13.854 \\
+    1000 & 0.256 & 0.256 & 13.026 & 28.707 \\
+    2000 & 0.544 & 0.514 & 13.691 & 54.403 \\
+    4000 & 112.886 & 116.237 & 25.045 & 108.647 \\
+    6000 & 174.475 & 152.638 & 31.847 & 161.420 \\
+    8000 & 247.291 & 231.218 & 40.149 &  -- \\
+    12000 &  -- &  -- & 54.820 &  -- \\
+    16000 &  -- &  -- & 75.595 &  -- \\
+    \bottomrule
+  \end{tabular}
+  \caption*{\footnotesize All timings are measured in seconds. The CPU timings were obtained on a 2.67 GHz Intel Xeon Processor using the AMD Platform and the GPU timings were obtained on a NVIDIA Tesla M2070 GPU, both on NYU's Bowery cluster. Timings are taken from the first overall iteration only in the ``meta'' algorithm. Timings for $N_x$ and $N_q$ values are per iteration of the solution algorithm. Timings for simulations are absolute timings for the entire simulation routine. The actual size used for the $N_{sim}$ timings is the value in the first column rounded up to the nearest multiple of 256, the work-group size. The actual size used for the $N_t$ timings is the value in the first column multiplied by 1.2, to allow for a 20\% burn-in. While one size is being varied, the others are held constant at $N_x = 1000$, $N_q = 1000$, $N_{sim} = 5120$, and $N_t = 1200$. Because of rounding up, the 125 timing for the $N_{sim}$ scaling is redundant and not included. Other missing entries are omissions simply due to the long length of these timings.}
+\end{table}
+
+\begin{figure}[ht]
+  \centering
+  \caption{Speedup: Ratio of CPU to GPU Timings}
+  \label{fig:speedup}
+  \includegraphics[width=\textwidth]{speedup.pdf}
+\end{figure}
+
+In general, the speedup appears to be larger for the solution
+algorithm than for the simulation algorithm. This may be because the
+solution algorithm runs a larger set of computations in parallel (the
+entire grid), whereas the simulation algorithm only runs the
+simulation for each time $t$ in parallel, and across times $t$ in
+serial. Still, the GPU beats the CPU for both algorithms at all
+scales, and gains a large advantage over the CPU for large values of
+$N_{sim}$. It is also clear that the GPU holds a potentially huge
+advantage for the simulation step, making this type of parallelzation
+invaluable for solving optimal policy functions for complex models.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+Overall this project was highly successful yielding tremendous returns
+to parallelization, and will be nearly directly applicable to Dan
+Greenwald's Ph.D. thesis work, as the model we use is a simplification
+of the types of model that he uses in his research. The speedup gained
+should allow for otherwise intractable models to be addressed or for
+existing computations to be made much more precise. GPU computation
+using OpenCL therefore appears to be a highly valuable tool for
+heterogeneous agents models, and one that we are very grateful to have
+learned.
+
+\clearpage
+
+\begin{thebibliography}{9}
+
+\bibitem{Guvenen11}
+  Guvenen, Fatih,
+  ``Macroeconomics With Heterogeneity: A Practical Guide.''
+  NBER Working Paper, No. 17622, 2011.
+
+\bibitem{HeathcoteStoreslettenViolante09}
+  Heathcote, Jonathan, Storesletten, Kjetil, and Violante, Giovanni L.,
+  ``Quantitative Macroeconomics with Heterogeneous Households.''
+  NBER Working Paper, No. 14768, 2009.
+
+\bibitem{KrusellSmith98}
+  Krusell, Per and Smith, Anthony A., Jr.,
+  ``Income and wealth heterogeneity in the macroeconomy.''
+  \emph{Journal of Political Economy} Vol. 106, No. 5, 1998.
+
+\bibitem{Scarpino11}
+  Scarpino, Matthew,
+  \emph{OpenCL In Action: How to Accelerate Graphics and Computation.}
+  Manning Publications Co., 2011.
+
+\end{thebibliography}
 
 \end{document}

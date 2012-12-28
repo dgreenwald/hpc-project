@@ -1,0 +1,143 @@
+
+\documentclass[a4paper,12pt]{article}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{amsfonts}
+\usepackage{changepage}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{caption}
+
+\newcommand{\sumn}{\sum_{i=1}^{n}}
+\newcommand{\sumt}{\sum_{t=0}^\infty}
+\newcommand{\sumj}{\sum_{j=-\infty}^\infty}
+\newcommand{\fsum}{\frac{1}{n} \sum_{i=1}^n}
+\newcommand{\prodn}{\prod_{i=1}^{n}}
+\newcommand{\intf}{\int_{-\infty}^{\infty}}
+\newcommand{\intz}{\int_0^\infty}
+\newcommand{\limf}{\lim_{n\to \infty}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\bp}{\mathbb{P}}
+\newcommand{\F}{\mathcal{F}}
+\newcommand{\Var}{\text{Var}}
+\newcommand{\Cov}{\text{Cov}}
+\newcommand{\Corr}{\text{Corr}}
+\newcommand{\topr}{\xrightarrow{  p  }}
+\newcommand{\tod}{\xrightarrow{  d  }}
+\newcommand{\blambda}{\bar{\lambda}}
+\newcommand{\htheta}{\hat{\theta}}
+\newcommand{\hbeta}{\hat{\beta}}
+\newcommand{\hmu}{\hat{\mu}}
+\newcommand{\hF}{\hat{F}}
+\newcommand{\sss}{\subsubsection*}
+\newcommand{\simiid}{\stackrel{\text{iid}}{\sim}}
+\newcommand{\eqas}{\stackrel{\text{a.s.}}{=}}
+\newcommand{\eps}{\varepsilon}
+\newcommand{\re}{\text{Re}}
+\newcommand{\im}{\text{Im}}
+
+\numberwithin{equation}{section}
+
+\theoremstyle{definition}
+\newtheorem{thm}{Theorem}
+\newtheorem{claim}{Claim}
+\newtheorem{prop}[thm]{Proposition}
+\newtheorem{defn}{Definition}
+\newtheorem{cor}{Corollary}
+\newtheorem{ex}{Example}
+\newtheorem{exer}{Exercise}
+\newtheorem{lem}[thm]{Lemma}
+\newtheorem{ob}{Observation}
+\newtheorem{fact}{Fact}
+
+\allowdisplaybreaks[1]
+\linespread{1.6}
+% \linespread{1.3}
+
+\begin{document}
+
+\small
+% \footnotesize
+
+\setlength\voffset{-0.75 in}
+
+\changepage{1.5 in}{1 in}{0 in}{-0.5 in}{0 in}{0 in}{0 in}{0 in}{0 in}
+
+% Description of the problem
+
+Our project is to simulate the macroeconomic behavior of an economy
+with incomplete asset markets using OpenCL on a GPU. A complete
+description of the environment and the algorithm that we use can be
+found in Sections [] through []. In general, the model is based on
+that of Krusell and Smith (1998) adapted so that a risk-free bond is
+traded, and there is no capital in the economy.
+
+The problem contains two major sections. One is to solve for the
+agent's optimal consumption policy given his or her current
+state. This involves interating a functional operation on function
+approximations defined on a grid. Since the calculations for each
+gridpoint are independent, the algorithm is highly
+parallelizable. Each iteration involves solving an equation derived
+from the model's optimality conditions. This can be done without
+resorting to use of a nonlinear equation solver by use of the
+``endogenous grid method.'' The main computational challenge is to
+move back from the endogenous grid to the original grid, because it
+involves interpolation on an unknown grid, of which only a portion is
+held by each work-group.
+
+The second section is to use the optimal policies to simulate the
+economy for a large number of agents over a large number of periods,
+in order to obtain a simulation of macroeconomic behavior. This type
+of simulation could be used to perform experiments, like studying the
+effects of a policy change. Alternatively, this type of simulation
+could be used for parameter estimation, which would seek to minimize
+the distance between simulated moments of macroeconomic variables and
+their counterparts in the actual data. The main computational
+challenge in this step is to set bond prices exactly so that markets
+clear (i.e. so that total saving equals total borrowing), which
+involves simulating the economy in each period for various guesses of
+the bond price until market clearing is attained.
+
+Throughout the above steps, the agents use a forecasting rule to
+generate their expectations of the bond price in the future, based on
+the future macroeconomic state. In order that this expectation be
+unbiased, the above algorithm is iterated using guesses of the policy
+rule until the forecasting rule is within tolerance of the relevant
+sample means.
+
+% Scale of the problem we are aiming at
+
+The scale of the project that we are aiming at for the solution
+portion of the model is to use grids of between a few hundred and a
+few thousand gridpoints each for the continuous variables $(x_i,
+q)$. This means approximating the optimal policy function on $4 N_x
+N_q$ gridpoints.
+
+At the high end, the scale of the solution step is limited by the
+available amount of memory for GPU computation, since two approximate
+functions must be stored on the device at all times, taking up $32 N_x
+N_q$ bytes of space at double precision. At the low end, the ability
+to parallelize across gridpoints makes this procedure economical for
+nearly any scale.
+
+The scale of the project that we are aiming at for the simulation
+portion of the model is to use a few thousand agents over thousands of
+periods, for example, 5,000 agents over 12,000 periods (of which 2,000
+is burn-in).
+
+At the high end, the limitation is again the available amount of
+memory for GPU computation, as the program is currently written, since
+the simulation output arrays must hold $24 N_{sim} N_t$ bytes on the
+device. At the low end, since parallelization can only occur across
+agents in the simulation, and not across time, this algorithm may not
+yield speedup for very small values of $N_{sim}$.
+
+% 
+
+\end{document}
