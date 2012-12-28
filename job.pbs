@@ -1,0 +1,15 @@
+#!/bin/bash
+
+#PBS -l walltime=2:00:00
+#PBS -q cuda
+#PBS -N hpc_timings
+#PBS -M dlg340@nyu.edu
+#PBS -m abe
+
+source /etc/profile.d/env-modules.sh
+module load cudasdk/4.0.17 cudatoolkit/4.0.17
+
+cd /home/dlg340/hpc-project/code/
+./timings.sh
+
+exit 0;

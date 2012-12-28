@@ -10,12 +10,13 @@ _*
 *.dvi
 *.pdf
 *.mat
-*.o
+*.o*
 *.old
 *.nav
 *.toc
 *.snm
 *.out
+*.e*
 solve
 solve_float
 print-devices
